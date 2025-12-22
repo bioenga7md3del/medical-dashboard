@@ -1,187 +1,150 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import numpy as np
 
-# --- 1. إعدادات الصفحة ---
-st.set_page_config(
-    page_title="منصة إدارة الأجهزة الطبية",
-    page_icon="🏥",
-    layout="wide"
-)
+# --- 1. إعداد الصفحة ---
+st.set_page_config(page_title="التحليل المترابط للأجهزة الطبية", layout="wide", page_icon="📈")
 
-# تنسيق CSS
+# CSS
 st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;700;800&display=swap');
-    html, body, [class*="css"] { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; }
-    h1, h2, h3 { text-align: right; color: #0f172a; }
-    .stMetric { background-color: #fff; border: 1px solid #e2e8f0; border-radius: 8px; text-align: right !important; }
-    </style>
-    """, unsafe_allow_html=True)
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;700&display=swap');
+* { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; }
+h1, h2, h3 { color: #1e3a8a; }
+.stMetric { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; }
+</style>
+""", unsafe_allow_html=True)
 
-# --- 2. محرك الذكاء الاصطناعي (التشخيص) ---
-def analyze_data(df):
-    # تحويل البيانات
-    for col in ['Temperature_C', 'Vibration_Hz', 'Voltage_V', 'Helium_Level', 'Usage_Hours']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+# --- 2. دوال التحليل المساعدة ---
 
-    # حساب المخاطر (Logic)
-    def calculate_row_risk(row):
-        score = 0
-        reasons = []
-        actions = []
-
-        # 1. منطق الرنين (MRI)
-        if row['Device_Type'] == 'MRI':
-            if row['Helium_Level'] < 50:
-                score += 50
-                reasons.append("نقص حاد في الهيليوم")
-                actions.append("تعبئة Quench Pipe / فحص التسريب")
-            elif row['Helium_Level'] < 70:
-                score += 20
-                reasons.append("مستوى هيليوم منخفض")
-                actions.append("جدولة تعبئة")
-            if row['Temperature_C'] > 24:
-                score += 30
-                reasons.append("حرارة الغرفة مرتفعة")
-                actions.append("فحص تكييف غرفة الرنين")
-
-        # 2. منطق المقطعية (CT)
-        elif row['Device_Type'] == 'CT Scan':
-            if row['Temperature_C'] > 80:
-                score += 40
-                reasons.append("حرارة الأنبوب (Tube) حرجة")
-                actions.append("إيقاف الجهاز للتبريد فوراً")
-            if row['Vibration_Hz'] > 50:
-                score += 40
-                reasons.append("اهتزاز القنطرة (Gantry)")
-                actions.append("فحص التوازن والمحامل")
-
-        # 3. منطق الفلورو (Fluoro)
-        elif row['Device_Type'] == 'Fluoroscopy':
-            if abs(row['Voltage_V'] - 220) > 15:
-                score += 45
-                reasons.append("تذبذب كهرباء (Power)")
-                actions.append("فحص الـ UPS ومنظم الجهد")
-
-        # 4. منطق الإكس راي (X-Ray)
-        elif row['Device_Type'] == 'X-Ray':
-            if row['Usage_Hours'] > 20000:
-                score += 30
-                reasons.append("انتهاء العمر الافتراضي للأنبوب")
-                actions.append("خطط لاستبدال الـ Tube")
-
-        # تقييم عام للكل
-        if score == 0 and row['Usage_Hours'] > 10000:
-            score += 15
-            reasons.append("تقادم عام")
-            actions.append("صيانة وقائية")
-
-        # تحديد الحالة النهائية
-        risk_label = "مستقر 🟢"
-        if score >= 60: risk_label = "حرج 🔴"
-        elif score >= 30: risk_label = "تحذير 🟡"
-
-        return pd.Series([score, risk_label, " + ".join(reasons), " + ".join(actions)])
-
-    df[['Risk_Score', 'Status', 'Diagnosis', 'Action']] = df.apply(calculate_row_risk, axis=1)
-    return df
+# رسم مصفوفة الترابط (Correlation Heatmap)
+def plot_correlation(df, title):
+    # نحسب الترابط فقط للأعمدة الرقمية
+    corr = df.select_dtypes(include=[np.number]).corr()
+    fig = px.imshow(corr, text_auto=True, aspect="auto", color_continuous_scale='RdBu_r', 
+                    title=f"مصفوفة الترابط: {title}")
+    return fig
 
 # --- 3. الواجهة الجانبية ---
 with st.sidebar:
-    st.title("⚙️ الإعدادات")
-    uploaded_file = st.file_uploader("ارفع ملف البيانات (Specialized Excel)", type=['xlsx'])
-    st.info("قم برفع ملف: Specialized_Medical_Data.xlsx")
+    st.title("📂 البيانات")
+    uploaded_file = st.file_uploader("ارفع ملف Smart_Medical_Data.xlsx", type=['xlsx'])
+    st.info("يجب أن يحتوي الملف على صفحات: MRI, CT, Fluoro, XRay")
 
 # --- 4. العرض الرئيسي ---
-st.title("مركز القيادة الموحد للأجهزة الطبية")
+st.title("📊 منصة التحليل العميق للأجهزة الطبية")
 
 if uploaded_file:
-    df_raw = pd.read_excel(uploaded_file)
-    df = analyze_data(df_raw)
-    
-    # تقسيم الشاشة لـ 4 تبويبات
-    tab1, tab2, tab3, tab4 = st.tabs(["🧲 الرنين (MRI)", "☢️ المقطعية (CT)", "📺 الفلورسكوبي (Fluoro)", "🦴 الأشعة (X-Ray)"])
+    # قراءة كل صفحة على حدة
+    try:
+        xls = pd.ExcelFile(uploaded_file)
+        df_mri = pd.read_excel(xls, 'MRI')
+        df_ct = pd.read_excel(xls, 'CT')
+        df_fl = pd.read_excel(xls, 'Fluoro')
+        df_xr = pd.read_excel(xls, 'XRay')
+    except Exception as e:
+        st.error(f"خطأ في قراءة الملف: {e}")
+        st.stop()
 
-    # ------------------ TAB 1: MRI ------------------
+    # التبويبات
+    tab1, tab2, tab3, tab4 = st.tabs(["🧲 الرنين (MRI)", "☢️ المقطعية (CT)", "📺 الفلورسكوبي", "🦴 الأشعة (X-Ray)"])
+
+    # ==========================
+    # 1. تحليل الرنين (MRI)
+    # ==========================
     with tab1:
-        st.header("لوحة مراقبة الرنين المغناطيسي")
-        mri_df = df[df['Device_Type'] == 'MRI']
+        st.header("تحليل علاقات الرنين المغناطيسي")
         
-        # مؤشرات خاصة بالرنين
-        c1, c2, c3 = st.columns(3)
-        c1.metric("عدد أجهزة الرنين", len(mri_df))
-        c2.metric("متوسط مستوى الهيليوم", f"{mri_df['Helium_Level'].mean():.1f}%")
-        critical_mri = len(mri_df[mri_df['Status'] == 'حرج 🔴'])
-        c3.metric("تنبيهات حرجة", critical_mri, delta_color="inverse")
-        
-        col_chart, col_table = st.columns([1, 2])
-        with col_chart:
-            st.subheader("مستويات الهيليوم")
-            fig = px.bar(mri_df, x='Device_ID', y='Helium_Level', color='Status', 
-                         title="مراقبة الهيليوم (الحد الأدنى 60%)",
-                         color_discrete_map={'حرج 🔴':'#ef4444', 'تحذير 🟡':'#f59e0b', 'مستقر 🟢':'#10b981'})
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col_table:
-            st.subheader("الأجهزة التي تحتاج تعبئة")
-            st.dataframe(mri_df[mri_df['Risk_Score']>0][['Device_ID', 'Location', 'Helium_Level', 'Action']], use_container_width=True)
+        # KPIs
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("متوسط حرارة الشيلر", f"{df_mri['Chiller_Temp'].mean():.1f}°C")
+        c2.metric("متوسط الهيليوم", f"{df_mri['Helium_Level'].mean():.1f}%")
+        c3.metric("معدل الحالات اليومي", f"{df_mri['Daily_Cases'].mean():.0f}")
+        c4.metric("حرارة الغرفة", f"{df_mri['Room_Temp'].mean():.1f}°C")
 
-    # ------------------ TAB 2: CT Scan ------------------
+        # الرسم البياني المركب (3 متغيرات)
+        st.subheader("تحليل: كيف تؤثر حرارة الغرفة والتشغيل على الشيلر؟")
+        # X=ساعات التشغيل, Y=حرارة الشيلر, اللون=حرارة الغرفة, الحجم=عدد الحالات
+        fig_bub = px.scatter(df_mri, x="Continuous_Hours", y="Chiller_Temp", 
+                             size="Daily_Cases", color="Room_Temp",
+                             hover_name="Device_ID", title="كل نقطة تمثل قراءة يومية",
+                             labels={"Continuous_Hours": "ساعات التشغيل", "Chiller_Temp": "حرارة الشيلر"},
+                             color_continuous_scale="tropic")
+        st.plotly_chart(fig_bub, use_container_width=True)
+
+        # مصفوفة الترابط
+        st.subheader("كشف العلاقات الخفية (Correlation)")
+        st.write("اللون الأحمر الغامق يعني علاقة طردية قوية، الأزرق يعني عكسية.")
+        st.plotly_chart(plot_correlation(df_mri, "متغيرات MRI"), use_container_width=True)
+        
+        # تحليل الهيليوم
+        st.subheader("تنبؤ الخطر: الهيليوم vs الشيلر")
+        fig_line = px.line(df_mri, y="Helium_Level", x="Chiller_Temp", title="هل انخفاض الهيليوم مرتبط بارتفاع حرارة الشيلر؟")
+        st.plotly_chart(fig_line, use_container_width=True)
+
+    # ==========================
+    # 2. تحليل المقطعية (CT)
+    # ==========================
     with tab2:
-        st.header("لوحة مراقبة الأشعة المقطعية")
-        ct_df = df[df['Device_Type'] == 'CT Scan']
-        
+        st.header("تحليل علاقات الأشعة المقطعية")
+
         c1, c2, c3 = st.columns(3)
-        c1.metric("عدد أجهزة CT", len(ct_df))
-        c2.metric("متوسط حرارة الأنبوب", f"{ct_df['Temperature_C'].mean():.1f}°C")
-        c3.metric("متوسط الاهتزاز", f"{ct_df['Vibration_Hz'].mean():.1f} Hz")
-        
-        # رسم علاقة الحرارة بالاهتزاز (مهم جداً للمقطعية)
-        st.subheader("تحليل العلاقة: الحرارة vs الاهتزاز")
-        fig_ct = px.scatter(ct_df, x='Temperature_C', y='Vibration_Hz', color='Status', size='Risk_Score',
-                            hover_data=['Device_ID', 'Diagnosis'],
-                            color_discrete_map={'حرج 🔴':'#ef4444', 'تحذير 🟡':'#f59e0b', 'مستقر 🟢':'#10b981'})
-        st.plotly_chart(fig_ct, use_container_width=True)
-        
-        st.error(f"يوجد {len(ct_df[ct_df['Status']=='حرج 🔴'])} أجهزة مقطعية في حالة حرجة تتطلب إيقاف التشغيل!")
+        c1.metric("حرارة الجانتري القصوى", f"{df_ct['Gantry_Temp'].max():.1f}°C")
+        c2.metric("استقرار الفولتية (SD)", f"{df_ct['Gantry_Voltage'].std():.2f}")
+        c3.metric("ساعات التشغيل المتواصل", f"{df_ct['Continuous_Hours'].mean():.1f} h")
 
-    # ------------------ TAB 3: Fluoroscopy ------------------
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("تأثير ضغط العمل على حرارة الجانتري")
+            # X=عدد الحالات, Y=حرارة الجانتري, اللون=حرارة الغرفة
+            fig_ct1 = px.scatter(df_ct, x="Daily_Cases", y="Gantry_Temp", color="Room_Temp",
+                                 title="هل تزداد حرارة الجانتري مع زيادة الحالات؟",
+                                 labels={"Daily_Cases": "عدد الحالات", "Gantry_Temp": "حرارة الجانتري"})
+            st.plotly_chart(fig_ct1, use_container_width=True)
+        
+        with col2:
+             st.subheader("استقرار الكهرباء تحت الضغط")
+             fig_ct2 = px.scatter(df_ct, x="Continuous_Hours", y="Gantry_Voltage", color="Gantry_Temp",
+                                  title="هل يتذبذب الفولت مع طول فترة التشغيل؟")
+             fig_ct2.add_hline(y=220, line_dash="dash", line_color="green")
+             st.plotly_chart(fig_ct2, use_container_width=True)
+
+        st.plotly_chart(plot_correlation(df_ct, "متغيرات CT Scan"), use_container_width=True)
+
+    # ==========================
+    # 3. تحليل الفلورسكوبي
+    # ==========================
     with tab3:
-        st.header("لوحة مراقبة الفلورسكوبي")
-        fl_df = df[df['Device_Type'] == 'Fluoroscopy']
+        st.header("تحليل الفلورسكوبي")
+        # التركيز على الكهرباء والرطوبة
+        st.subheader("تأثير الرطوبة على الدوائر الكهربائية")
         
-        # التركيز هنا على الكهرباء
-        c1, c2 = st.columns(2)
-        c1.metric("عدد الأجهزة", len(fl_df))
-        c2.metric("استقرار الجهد الكهربائي", f"{fl_df['Voltage_V'].mean():.1f} V")
-        
-        st.subheader("مراقبة استقرار التيار الكهربائي")
-        # رسم خطي للجهد
-        fig_fl = px.line(fl_df, x='Device_ID', y='Voltage_V', markers=True, title="الجهد الكهربائي (المثالي 220 فولت)")
-        fig_fl.add_hline(y=220, line_dash="dash", line_color="green")
-        fig_fl.add_hline(y=235, line_dash="dot", line_color="red")
-        fig_fl.add_hline(y=205, line_dash="dot", line_color="red")
+        fig_fl = px.scatter_3d(df_fl, x='Humidity', y='Voltage_V', z='Tube_Temp',
+                               color='Daily_Cases', opacity=0.7,
+                               title="تحليل ثلاثي الأبعاد: الرطوبة - الفولت - الحرارة")
+        fig_fl.update_layout(margin=dict(l=0, r=0, b=0, t=0))
         st.plotly_chart(fig_fl, use_container_width=True)
+        
+        st.plotly_chart(plot_correlation(df_fl, "Fluoro"), use_container_width=True)
 
-    # ------------------ TAB 4: X-Ray ------------------
+    # ==========================
+    # 4. تحليل الأشعة (X-Ray)
+    # ==========================
     with tab4:
-        st.header("لوحة مراقبة الأشعة السينية")
-        xr_df = df[df['Device_Type'] == 'X-Ray']
+        st.header("تحليل الأشعة السينية")
         
-        c1, c2 = st.columns(2)
-        c1.metric("عدد الأجهزة", len(xr_df))
-        c2.metric("الأجهزة القديمة (>20k ساعة)", len(xr_df[xr_df['Usage_Hours']>20000]))
+        # ربط حرارة التيوب بعدد الحالات
+        st.subheader("كفاءة التبريد: حرارة الأنبوب vs وقت الراحة")
+        # نفترض أن الساعات القليلة تعني وقت راحة أكبر
+        fig_xr = px.area(df_xr, x="Continuous_Hours", y="Tube_Temp", 
+                         title="تراكم الحرارة مع استمرار التشغيل")
+        st.plotly_chart(fig_xr, use_container_width=True)
         
-        st.subheader("حالة الأجهزة وتوصيات الاستبدال")
-        # فلتر للأجهزة القديمة فقط
-        old_devices = xr_df[xr_df['Usage_Hours'] > 15000]
-        if not old_devices.empty:
-            st.dataframe(old_devices[['Device_ID', 'Location', 'Usage_Hours', 'Action']], use_container_width=True)
-        else:
-            st.success("جميع أجهزة الأشعة حديثة وبحالة جيدة.")
+        st.write("جدول الحالات الحرجة (حرارة > 40 أو فولتية غير مستقرة):")
+        critical_xr = df_xr[(df_xr['Tube_Temp'] > 40) | (abs(df_xr['Voltage_V'] - 220) > 15)]
+        st.dataframe(critical_xr, use_container_width=True)
 
 else:
-    st.warning("الرجاء رفع ملف البيانات للبدء...")
+    st.info("الرجاء تشغيل ملف generate_smart_data.py أولاً لإنشاء البيانات، ثم رفع الملف الناتج هنا.")
