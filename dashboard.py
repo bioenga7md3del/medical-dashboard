@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import numpy as np
 
 # --- 1. إعداد الصفحة ---
-st.set_page_config(page_title="نظام التنبؤ الذكي بالأعطال", layout="wide", page_icon="🚨")
+st.set_page_config(page_title="نظام التنبؤ الذكي بالأعطال", layout="wide", page_icon="🏥")
 
 # CSS
 st.markdown("""
@@ -14,14 +15,15 @@ st.markdown("""
 h1, h2, h3 { color: #0f172a; }
 .risk-card {
     padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #ddd;
+    box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
 }
-.critical { background-color: #fee2e2; border-left: 5px solid #ef4444; color: #7f1d1d; }
-.warning { background-color: #fef3c7; border-left: 5px solid #f59e0b; color: #78350f; }
-.safe { background-color: #dcfce7; border-left: 5px solid #22c55e; color: #14532d; }
+.critical { background-color: #fee2e2; border-right: 5px solid #ef4444; color: #7f1d1d; }
+.warning { background-color: #fffbeb; border-right: 5px solid #f59e0b; color: #92400e; }
+.safe { background-color: #f0fdf4; border-right: 5px solid #22c55e; color: #166534; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. محرك التنبؤ المنطقي (The Brain) ---
+# --- 2. محرك التنبؤ وتصنيف الحالة ---
 def predict_faults(df, device_type):
     alerts = []
     
@@ -29,189 +31,209 @@ def predict_faults(df, device_type):
         device_id = row['Device_ID']
         risk_score = 0
         reasons = []
-        status = "آمن"
-        action = "متابعة روتينية"
+        status_label = "سليمة 🟢"
+        status_cat = "Safe" # للفلترة
+        action = "لا يوجد إجراء مطلوب"
+        css_class = "safe"
 
         # ================== منطق الرنين (MRI) ==================
         if device_type == 'MRI':
-            # 1. الهيليوم (أخطر عامل)
             if row['Helium_Level'] < 40:
                 risk_score += 50
-                reasons.append(f"مستوى الهيليوم حرج ({row['Helium_Level']:.1f}%)")
+                reasons.append(f"مستوى الهيليوم حرج جداً ({row['Helium_Level']:.1f}%)")
                 action = "تعبئة طارئة وفحص التنفيس"
             elif row['Helium_Level'] < 60:
                 risk_score += 20
                 reasons.append("انخفاض الهيليوم")
+                action = "جدولة تعبئة"
             
-            # 2. الشيلر وحرارة الغرفة (علاقة مترابطة)
             if row['Chiller_Temp'] > 20:
                 risk_score += 30
                 reasons.append(f"فشل تبريد الشيلر ({row['Chiller_Temp']:.1f}°C)")
-            if row['Room_Temp'] > 24:
-                risk_score += 15
-                reasons.append("حرارة الغرفة مرتفعة")
 
         # ================== منطق المقطعية (CT) ==================
         elif device_type == 'CT':
-            # 1. حرارة الجانتري (مرتبطة بالضغط)
-            if row['Gantry_Temp'] > 40:
-                risk_score += 40
-                reasons.append(f"سخونة الجانتري ({row['Gantry_Temp']:.1f}°C)")
+            if row['Gantry_Temp'] > 85:
+                risk_score += 50
+                reasons.append(f"حرارة الجانتري خطرة ({row['Gantry_Temp']:.1f}°C)")
                 action = "إيقاف للتبريد فوراً"
-            
-            # 2. استقرار الكهرباء
-            if abs(row['Gantry_Voltage'] - 220) > 15:
+            elif row['Gantry_Temp'] > 60:
+                risk_score += 20
+                reasons.append("ارتفاع حرارة الجانتري")
+
+            if abs(row['Gantry_Voltage'] - 220) > 20:
                 risk_score += 30
-                reasons.append("تذبذب الفولتية")
-                action = "فحص منظم الجهد (Stabilizer)"
-                
-            # 3. ضغط العمل
-            if row['Continuous_Hours'] > 20:
-                risk_score += 10
-                reasons.append("تشغيل متواصل > 20 ساعة")
+                reasons.append("تذبذب كهرباء شديد")
+                action = "فحص Stabilizer"
 
         # ================== منطق الفلورو (Fluoro) ==================
         elif device_type == 'Fluoro':
-            # الرطوبة والكهرباء (خطر الشورت)
-            if row['Humidity'] > 70:
-                risk_score += 25
-                reasons.append(f"رطوبة عالية ({row['Humidity']:.1f}%) خطر كهربائي")
-            if row['Voltage_V'] < 200:
-                risk_score += 35
-                reasons.append("ضعف التيار الكهربائي")
-                action = "فحص مزود الطاقة (PSU)"
+            if row['Voltage_V'] < 190 or row['Voltage_V'] > 250:
+                risk_score += 40
+                reasons.append("جهد كهربائي غير مستقر")
+                action = "فحص وحدة التغذية (PSU)"
+            if row['Humidity'] > 75:
+                risk_score += 15
+                reasons.append("رطوبة عالية (خطر كهربائي)")
 
         # ================== منطق الأشعة (XRay) ==================
         elif device_type == 'XRay':
-            # حرارة التيوب
-            if row['Tube_Temp'] > 50:
+            if row['Tube_Temp'] > 55:
                 risk_score += 45
-                reasons.append(f"حرارة الأنبوب خطرة ({row['Tube_Temp']:.1f}°C)")
-                action = "استبدال الزيت / فحص المراوح"
+                reasons.append(f"حرارة الأنبوب ({row['Tube_Temp']:.1f}°C)")
+                action = "استبدال الزيت / تبريد"
+            if row['Usage_Hours'] > 25000:
+                risk_score += 25
+                reasons.append("تجاوز العمر الافتراضي")
+                action = "خطة إحلال"
 
-        # --- التصنيف النهائي ---
+        # --- التصنيف النهائي بناءً على النقاط ---
         if risk_score >= 50:
-            status = "خطر مرتفع 🔴"
+            status_label = "توقف وشيك / خطر 🔴"
+            status_cat = "Critical"
             css_class = "critical"
         elif risk_score >= 20:
-            status = "تحذير 🟡"
+            status_label = "تعمل ولكن حرجة 🟡"
+            status_cat = "Warning"
             css_class = "warning"
         else:
-            status = "مستقر 🟢"
+            status_label = "تعمل بكفاءة (سليمة) 🟢"
+            status_cat = "Safe"
             css_class = "safe"
+            reasons.append("الأداء ضمن المعدلات الطبيعية")
 
-        # نضيف النتيجة للقائمة إذا كان هناك خطر أو تحذير
-        if risk_score > 0:
-            alerts.append({
-                "Device_ID": device_id,
-                "Status": status,
-                "Reasons": " + ".join(reasons),
-                "Action": action,
-                "Risk_Score": risk_score,
-                "Class": css_class
-            })
+        alerts.append({
+            "Device_ID": device_id,
+            "Status_Label": status_label,   # للعرض
+            "Status_Category": status_cat,  # للفلترة
+            "Reasons": " + ".join(reasons),
+            "Action": action,
+            "Risk_Score": risk_score,
+            "Class": css_class,
+            "Data_Row": row # نحتفظ بالبيانات للرسم
+        })
 
     return pd.DataFrame(alerts)
 
-# --- 3. الواجهة الجانبية ---
-with st.sidebar:
-    st.title("📂 البيانات")
-    uploaded_file = st.file_uploader("ارفع ملف Smart_Medical_Data.xlsx", type=['xlsx'])
+# --- 3. دالة رسم مؤشر الموقع (Gauge) ---
+def plot_site_health(all_data):
+    # حساب نسبة الصحة العامة: (عدد الأجهزة السليمة / العدد الكلي) * 100
+    total = len(all_data)
+    safe = len(all_data[all_data['Status_Category'] == 'Safe'])
+    score = (safe / total) * 100 if total > 0 else 0
+    
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = score,
+        title = {'text': "مؤشر الجاهزية العامة للموقع"},
+        gauge = {
+            'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+            'bar': {'color': "#22c55e"}, # أخضر
+            'bgcolor': "white",
+            'borderwidth': 2,
+            'bordercolor': "gray",
+            'steps': [
+                {'range': [0, 50], 'color': '#fee2e2'}, # أحمر فاتح
+                {'range': [50, 80], 'color': '#fef3c7'}, # أصفر فاتح
+                {'range': [80, 100], 'color': '#dcfce7'}], # أخضر فاتح
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': 90}}))
+    
+    fig.update_layout(height=250, margin=dict(l=20,r=20,t=40,b=20))
+    return fig
 
-# --- 4. العرض الرئيسي ---
-st.title("🚨 مركز التنبؤ بالأعطال (Predictive Alert System)")
-st.markdown("يقوم النظام بتحليل الترابط بين (الحرارة، الرطوبة، الكهرباء، وساعات العمل) لإصدار توقعات دقيقة.")
+# --- 4. الواجهة الجانبية (Filters) ---
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/3063/3063823.png", width=70)
+    st.title("لوحة التحكم")
+    uploaded_file = st.file_uploader("📂 رفع البيانات (Smart_Medical_Data.xlsx)", type=['xlsx'])
+    
+    st.markdown("---")
+    st.subheader("🔍 تصفية حسب الحالة")
+    
+    # خيارات الفلتر
+    filter_options = {
+        "Critical": "🔴 توقف وشيك (خطر)",
+        "Warning": "🟡 تعمل ولكن حرجة",
+        "Safe": "🟢 تعمل بكفاءة (سليمة)"
+    }
+    
+    selected_filters = st.multiselect(
+        "اعرض الأجهزة:",
+        options=list(filter_options.keys()),
+        format_func=lambda x: filter_options[x],
+        default=["Critical", "Warning", "Safe"] # الافتراضي الكل
+    )
+    
+    st.info("قم بإلغاء تحديد 'سليمة' للتركيز فقط على الأعطال.")
+
+# --- 5. التطبيق الرئيسي ---
+st.title("🏥 مركز القيادة الموحد للأجهزة الطبية")
 
 if uploaded_file:
-    # قراءة الصفحات
     try:
         xls = pd.ExcelFile(uploaded_file)
-        df_mri = pd.read_excel(xls, 'MRI')
-        df_ct = pd.read_excel(xls, 'CT')
-        df_fl = pd.read_excel(xls, 'Fluoro')
-        df_xr = pd.read_excel(xls, 'XRay')
-    except:
-        st.error("الملف لا يحتوي على الصفحات المطلوبة (MRI, CT, Fluoro, XRay)")
-        st.stop()
-
-    # التبويبات
-    tab1, tab2, tab3, tab4 = st.tabs(["🧲 الرنين (MRI)", "☢️ المقطعية (CT)", "📺 الفلورسكوبي", "🦴 الأشعة (X-Ray)"])
-
-    # === دالة مساعدة لعرض التنبؤات ===
-    def show_predictions(df, type_name):
-        alerts_df = predict_faults(df, type_name)
+        # تجميع كل البيانات لحساب المؤشر العام
+        full_report = pd.DataFrame()
         
-        if not alerts_df.empty:
-            # ترتيب حسب الخطورة
-            alerts_df = alerts_df.sort_values(by='Risk_Score', ascending=False)
+        # معالجة كل الأنواع أولاً
+        processed_data = {}
+        for dtype in ['MRI', 'CT', 'Fluoro', 'XRay']:
+            raw_df = pd.read_excel(xls, dtype)
+            analyzed_df = predict_faults(raw_df, dtype)
+            processed_data[dtype] = analyzed_df
+            full_report = pd.concat([full_report, analyzed_df])
+
+        # 1. عرض مؤشر الموقع (Gauge)
+        st.plotly_chart(plot_site_health(full_report), use_container_width=True)
+
+        # 2. التبويبات
+        tab1, tab2, tab3, tab4 = st.tabs(["🧲 الرنين (MRI)", "☢️ المقطعية (CT)", "📺 الفلورسكوبي", "🦴 الأشعة (X-Ray)"])
+        
+        # دالة العرض المتكررة
+        def display_tab_content(device_type):
+            df_curr = processed_data[device_type]
             
-            col_kpi1, col_kpi2 = st.columns(2)
-            critical_count = len(alerts_df[alerts_df['Status'].str.contains('خطر')])
-            warning_count = len(alerts_df[alerts_df['Status'].str.contains('تحذير')])
+            # تطبيق الفلتر
+            df_filtered = df_curr[df_curr['Status_Category'].isin(selected_filters)]
             
-            col_kpi1.metric("أجهزة معرضة لتوقف تام (Critical)", critical_count, delta_color="inverse")
-            col_kpi2.metric("أجهزة تحتاج صيانة وقائية (Warning)", warning_count, delta_color="off")
+            # إحصائيات سريعة للنوع
+            col1, col2, col3 = st.columns(3)
+            col1.metric("إجمالي المعروض", len(df_filtered))
+            col2.metric("الحرجة جداً", len(df_curr[df_curr['Status_Category']=='Critical']), delta_color="inverse")
+            col3.metric("السليمة", len(df_curr[df_curr['Status_Category']=='Safe']))
             
-            st.subheader("📋 تقرير التنبؤ التفصيلي")
+            st.markdown("---")
             
-            # عرض الكروت
-            for i, row in alerts_df.iterrows():
-                st.markdown(f"""
-                <div class="risk-card {row['Class']}">
-                    <div style="display:flex; justify-content:space-between;">
-                        <h3>{row['Device_ID']}</h3>
-                        <b>{row['Status']}</b>
+            if df_filtered.empty:
+                st.info("لا توجد أجهزة تطابق الفلتر المختار.")
+            else:
+                # عرض الكروت
+                for i, row in df_filtered.iterrows():
+                    st.markdown(f"""
+                    <div class="risk-card {row['Class']}">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <h3 style="margin:0;">{row['Device_ID']}</h3>
+                            <span style="font-size:0.9em; font-weight:bold;">{row['Status_Label']}</span>
+                        </div>
+                        <hr style="margin: 8px 0; border-color: #eee;">
+                        <div style="display:flex; justify-content:space-between;">
+                            <div><b>🔍 السبب:</b> {row['Reasons']}</div>
+                            <div><b>🛠️ الإجراء:</b> {row['Action']}</div>
+                        </div>
                     </div>
-                    <p><b>🔍 سبب التنبؤ بالعطل:</b> {row['Reasons']}</p>
-                    <p><b>🛠️ الإجراء الاستباقي الموصى به:</b> {row['Action']}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-        else:
-            st.success("✅ جميع الأنظمة تعمل بكفاءة تامة. لا توجد مؤشرات خطر.")
+                    """, unsafe_allow_html=True)
 
-    # 1. الرنين
-    with tab1:
-        st.header("تحليل مخاطر الرنين المغناطيسي")
-        # عرض البيانات الخام كإحصائية
-        c1, c2 = st.columns(2)
-        c1.info(f"متوسط الهيليوم: {df_mri['Helium_Level'].mean():.1f}%")
-        c2.info(f"متوسط حرارة الشيلر: {df_mri['Chiller_Temp'].mean():.1f}°C")
-        st.markdown("---")
-        # تشغيل التنبؤ
-        show_predictions(df_mri, 'MRI')
-        
-        # رسم بياني توضيحي
-        st.subheader("تحليل بصري للمشكلة")
-        fig = px.scatter(df_mri, x='Chiller_Temp', y='Helium_Level', color='Room_Temp', 
-                         size='Daily_Cases', title="علاقة تبخر الهيليوم بحرارة الشيلر")
-        st.plotly_chart(fig, use_container_width=True)
+        with tab1: display_tab_content('MRI')
+        with tab2: display_tab_content('CT')
+        with tab3: display_tab_content('Fluoro')
+        with tab4: display_tab_content('XRay')
 
-    # 2. المقطعية
-    with tab2:
-        st.header("تحليل مخاطر الأشعة المقطعية")
-        show_predictions(df_ct, 'CT')
-        
-        st.subheader("تحليل بصري للمشكلة")
-        fig = px.scatter(df_ct, x='Gantry_Temp', y='Gantry_Voltage', color='Continuous_Hours',
-                         title="تأثير التشغيل المتواصل على حرارة وكهرباء الجانتري")
-        fig.add_hline(y=220, line_dash="dash", annotation_text="Ideal Voltage")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # 3. الفلورو
-    with tab3:
-        st.header("تحليل مخاطر الفلورسكوبي")
-        show_predictions(df_fl, 'Fluoro')
-        
-        st.subheader("تحليل بصري للمشكلة")
-        fig = px.bar(df_fl, x='Device_ID', y='Voltage_V', color='Humidity',
-                     title="تذبذب الكهرباء وعلاقته بالرطوبة")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # 4. الأشعة
-    with tab4:
-        st.header("تحليل مخاطر الأشعة السينية")
-        show_predictions(df_xr, 'XRay')
+    except Exception as e:
+        st.error(f"حدث خطأ: {e}")
+        st.warning("تأكد من رفع ملف Smart_Medical_Data.xlsx الصحيح.")
 
 else:
-    st.info("الرجاء رفع ملف Smart_Medical_Data.xlsx للبدء في التحليل.")
+    st.info("الرجاء رفع ملف البيانات للبدء.")
