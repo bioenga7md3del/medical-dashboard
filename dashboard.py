@@ -18,7 +18,6 @@ st.markdown("""
     html, body, [class*="css"] { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; }
     .stMetric { background-color: #ffffff; border: 1px solid #e0f2fe; box-shadow: 0 2px 5px rgba(0,0,0,0.05); text-align: right !important; }
     h1, h2, h3 { text-align: right; color: #0b3b52; }
-    /* تنسيق خاص للنصائح */
     .advice-box { padding: 10px; border-radius: 5px; font-weight: bold; font-size: 0.9em; }
     </style>
     """, unsafe_allow_html=True)
@@ -116,7 +115,7 @@ else:
 # تشغيل التحليل الجديد
 df_analyzed = analyze_and_diagnose(df_raw)
 
-# الفلاتر الجانبية (تظهر بعد تحميل الداتا)
+# الفلاتر الجانبية
 with st.sidebar:
     st.subheader("🔍 تصفية النتائج")
     depts = st.multiselect("القسم:", df_analyzed['Location'].unique(), default=df_analyzed['Location'].unique())
@@ -148,7 +147,10 @@ with c1:
     if not high_risk_df.empty:
         # نفصل الأسباب إذا كان هناك أكثر من سبب
         reasons_series = high_risk_df['Diagnosis_Reason'].str.split(' \+ ').explode()
-        fig_reason = px.pie(names=reasons_series.value_counts().index, values=reasons_series.value_counts().values, donut=0.4)
+        
+        # ✅ هنا كان الخطأ وتم تصحيحه (hole بدلاً من donut)
+        fig_reason = px.pie(names=reasons_series.value_counts().index, values=reasons_series.value_counts().values, hole=0.4)
+        
         fig_reason.update_layout(font_family="Tajawal")
         st.plotly_chart(fig_reason, use_container_width=True)
     else:
@@ -167,10 +169,8 @@ st.subheader("🛠️ خطة الصيانة المقترحة (Action Plan)")
 st.markdown("قائمة بالأجهزة التي تتطلب تدخلاً، مع **سبب المشكلة** و **الحل المقترح**:")
 
 if not high_risk_df.empty:
-    # إعداد الجدول للعرض
     display_df = high_risk_df[['Device_ID', 'Location', 'Status', 'Risk_Score', 'Diagnosis_Reason', 'Recommended_Action']]
     
-    # دالة تلوين
     def highlight_row(row):
         return ['background-color: #fee2e2; color: black'] * len(row) if row['Risk_Score'] > 75 else [''] * len(row)
 
