@@ -57,13 +57,11 @@ st.markdown(f"""
 html, body, [class*="css"] {{ font-family: 'Tajawal', sans-serif; direction: rtl; }}
 .stApp {{ background-color: {bg_color}; color: {text_color}; }}
 
-/* تحويل الحاويات لكروت */
 div[data-testid="stVerticalBlockBorderWrapper"] {{
     background-color: {card_bg}; border: 1px solid {border_color}; border-radius: 12px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px;
 }}
 
-/* تصميم شارة الحدود (الجديد) */
 .limit-badge {{
     background: {limit_bg}; color: {limit_text};
     font-size: 0.75rem; padding: 2px 8px; border-radius: 4px;
@@ -71,25 +69,26 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
 }}
 .input-label {{ font-size:0.9em; font-weight:bold; opacity: 0.9; }}
 
-/* تحسين المدخلات */
 .stNumberInput input {{ background-color: {input_bg}; color: {text_color}; }}
 h1, h2, h3, h4 {{ color: {text_color}; font-weight: 700; }}
 .highlight {{ color: #00bcd4; }}
+
+/* صناديق الحالة */
+.status-box {{ padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 10px; }}
+.crit {{ background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #ef4444; }}
+.warn {{ background: rgba(234, 179, 8, 0.1); border: 1px solid #eab308; color: #eab308; }}
+.safe {{ background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; color: #22c55e; }}
 </style>
 """, unsafe_allow_html=True)
 
-# --- دالة الإدخال الذكية (مع الحدود) ---
+# --- دالة الإدخال الذكية ---
 def smart_input(col, label, key, min_v, max_v, step, limit_text, icon="🔹"):
-    # التأكد من تحميل القيمة
     if key not in st.session_state: st.session_state[key] = default_values[device_type].get(key, min_v)
-    
-    # رسم العنوان والحد (العودة للشكل القديم)
     col.markdown(f"""
     <div style="margin-bottom:5px; display:flex; justify-content:space-between;">
         <span class="input-label">{icon} {label}</span>
         <span class="limit-badge">{limit_text}</span>
     </div>""", unsafe_allow_html=True)
-    
     return col.number_input("hidden", min_value=min_v, max_value=max_v, step=step, key=key, label_visibility="collapsed")
 
 # --- 5. الهيكل الرئيسي ---
@@ -97,7 +96,7 @@ st.markdown(f"""<h2>🏥 مركز القيادة: <span class='highlight'>{devic
 
 col_inputs, col_dashboard = st.columns([1, 2.5], gap="large")
 
-# === القسم الأيمن: المدخلات (مع الحدود) ===
+# === القسم الأيمن: المدخلات ===
 with col_inputs:
     with st.container(border=True):
         st.markdown("#### ⚙️ لوحة التشغيل")
@@ -139,10 +138,13 @@ with col_inputs:
 # === منطق التحليل ===
 def analyze(dev, data):
     score = 0; factors = {}; reasons = []
-    if data.get('room_temp',22) > 24: score+=15; reasons.append("حرارة الغرفة"); factors['Room']=15
-    if data.get('humidity',45) > 70: score+=20; reasons.append("رطوبة عالية"); factors['Hum']=20
+    
+    # Global Checks
+    if data.get('room_temp',22) > 24: score+=15; reasons.append(f"حرارة الغرفة"); factors['Room']=15
+    if data.get('humidity',45) > 70: score+=20; reasons.append(f"رطوبة عالية"); factors['Hum']=20
     if data.get('cont_hours',0) > 10: score+=15; reasons.append("إجهاد تشغيل"); factors['Work']=15
 
+    # Specific Checks
     if dev == "الرنين المغناطيسي (MRI)":
         if data.get('helium', 85)<40: score+=50; reasons.append("خطر Quench"); factors['He']=50
         elif data.get('helium', 85)<60: score+=20; reasons.append("نقص هيليوم"); factors['He']=20
@@ -160,15 +162,16 @@ def analyze(dev, data):
         if data.get('exposure_errors',0)>3: score+=45; reasons.append("فشل تصوير"); factors['Gen']=45
 
     score = min(score, 100)
-    # إرجاع 4 قيم: النتيجة، النص، لون العداد، لون الخلفية
-    if score >= 50: return score, "DANGER / خطر", "#ef4444", "rgba(239, 68, 68, 0.1)"
-    elif score >= 20: return score, "WARNING / تحذير", "#eab308", "rgba(234, 179, 8, 0.1)"
-    return score, "SAFE / آمن", "#22c55e", "rgba(34, 197, 94, 0.1)"
+    
+    # [FIX]: Return 6 values including CSS class and reasons
+    if score >= 50: return score, "DANGER / خطر", "crit", reasons, factors, "#ef4444"
+    elif score >= 20: return score, "WARNING / تحذير", "warn", reasons, factors, "#eab308"
+    return score, "SAFE / آمن", "safe", reasons, factors, "#22c55e"
 
-# استدعاء التحليل (تصحيح الأخطاء هنا)
-score, status, clr, bg_clr = analyze(device_type, inputs)
+# [FIX]: Unpack exactly 6 values
+score, status, css, reasons, factors, clr = analyze(device_type, inputs)
 
-# === القسم الأيسر: الداشبورد (داخل كروت) ===
+# === القسم الأيسر: الداشبورد ===
 with col_dashboard:
     
     # 1. شريط الحالة العلوية (HUD)
@@ -198,7 +201,7 @@ with col_dashboard:
     grid_c1, grid_c2 = st.columns([2, 1])
 
     with grid_c1:
-        with st.container(border=True): # المربع الكبير (الرسوم)
+        with st.container(border=True): # المربع الكبير
             if sum(factors.values()) > 0:
                 st.markdown("#### 📊 تحليل الأسباب الجذرية")
                 fig_bar = px.bar(x=list(factors.keys()), y=list(factors.values()), color=list(factors.values()), color_continuous_scale='Reds', template=chart_theme)
@@ -221,9 +224,10 @@ with col_dashboard:
 
     with grid_c2:
         with st.container(border=True):
-            # استخدام المتغيرات bg_clr و clr بشكل صحيح هنا
-            st.markdown(f"""<div style="background:{bg_clr}; border:1px solid {clr}; color:{clr}; padding:10px; border-radius:8px; text-align:center; font-weight:bold; font-size:1.4em; margin-bottom:10px;">{status}</div>""", unsafe_allow_html=True)
+            # [FIX]: CSS class used here is now correctly returned
+            st.markdown(f"""<div class="status-box {css}" style="font-size:1.4em;">{status}</div>""", unsafe_allow_html=True)
             st.markdown(f"**📋 التشخيص:**")
+            # [FIX]: Reasons used here are now correctly returned
             if reasons:
                 for r in reasons: st.markdown(f"- {r}")
             else: st.markdown("- لا توجد أعطال")
