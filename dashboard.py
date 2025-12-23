@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 # --- 1. إعداد الصفحة ---
-st.set_page_config(page_title="Medical Command Center", layout="wide", page_icon="🏥")
+st.set_page_config(page_title="Medical AI Command Center", layout="wide", page_icon="🏥")
 
 # --- 2. القيم الافتراضية ---
 default_values = {
@@ -41,7 +41,7 @@ with st.sidebar:
             st.session_state[k] = v
         st.rerun()
 
-# --- 4. CSS (تصميم الحدود والكروت) ---
+# --- 4. CSS ---
 if is_dark:
     bg_color = "#0e1117"; card_bg = "#1e2329"; text_color = "#fafafa"; border_color = "#2d333b"; chart_theme = "plotly_dark"
     limit_bg = "#0f3443"; limit_text = "#00bcd4"; limit_border = "#005662"
@@ -73,7 +73,6 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
 h1, h2, h3, h4 {{ color: {text_color}; font-weight: 700; }}
 .highlight {{ color: #00bcd4; }}
 
-/* صناديق الحالة */
 .status-box {{ padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 10px; }}
 .crit {{ background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #ef4444; }}
 .warn {{ background: rgba(234, 179, 8, 0.1); border: 1px solid #eab308; color: #eab308; }}
@@ -135,41 +134,75 @@ with col_inputs:
             limit_txt = "Max 200k" if "CT" in device_type else "Max 20k"
             inputs['tube_age'] = smart_input(st, "عمر التيوب", "tube_age", 0.0, 500000.0, 1000.0, limit_txt, "⏳")
 
-# === منطق التحليل ===
+# === منطق التحليل الذكي (تمت إضافة الإجراءات actions) ===
 def analyze(dev, data):
-    score = 0; factors = {}; reasons = []
-    
+    score = 0
+    factors = {}
+    reasons = []
+    actions = [] # القائمة الجديدة للمقترحات
+
     # Global Checks
-    if data.get('room_temp',22) > 24: score+=15; reasons.append(f"حرارة الغرفة"); factors['Room']=15
-    if data.get('humidity',45) > 70: score+=20; reasons.append(f"رطوبة عالية"); factors['Hum']=20
-    if data.get('cont_hours',0) > 10: score+=15; reasons.append("إجهاد تشغيل"); factors['Work']=15
+    if data.get('room_temp',22) > 24: 
+        score+=15; reasons.append("حرارة الغرفة مرتفعة"); factors['Room']=15
+        actions.append("فحص نظام التكييف المركزي")
+    if data.get('humidity',45) > 70: 
+        score+=20; reasons.append("رطوبة عالية (خطر تكثف)"); factors['Hum']=20
+        actions.append("تشغيل مزيلات الرطوبة فوراً")
+    if data.get('cont_hours',0) > 10: 
+        score+=15; reasons.append("إجهاد تشغيل متواصل"); factors['Work']=15
+        actions.append("إيقاف الجهاز لمدة ساعة للتبريد")
 
     # Specific Checks
     if dev == "الرنين المغناطيسي (MRI)":
-        if data.get('helium', 85)<40: score+=50; reasons.append("خطر Quench"); factors['He']=50
-        elif data.get('helium', 85)<60: score+=20; reasons.append("نقص هيليوم"); factors['He']=20
+        if data.get('helium', 85)<40: 
+            score+=50; reasons.append("خطر Quench (فقد المغناطيسية)"); factors['He']=50
+            actions.append("استدعاء فريق الصيانة لتعبئة الهيليوم (طارئ)")
+        elif data.get('helium', 85)<60: 
+            score+=20; reasons.append("انخفاض مستوى الهيليوم"); factors['He']=20
+            actions.append("جدولة تعبئة هيليوم قريباً")
+            
         p = data.get('comp_pressure',20)
-        if p<15 or p>25: score+=40; reasons.append("ضغط كمبروسر"); factors['Comp']=40
-        if data.get('chiller_temp',10)>20: score+=30; reasons.append("فشل شيلر"); factors['Cool']=30
+        if p<15 or p>25: 
+            score+=40; reasons.append("خلل في ضغط الكمبروسر"); factors['Comp']=40
+            actions.append("فحص الـ Cold Head والوصلات")
+            
+        if data.get('chiller_temp',10)>20: 
+            score+=30; reasons.append("فشل تبريد الشيلر"); factors['Cool']=30
+            actions.append("فحص مضخة المياه الخارجية")
+
     elif dev == "الأشعة المقطعية (CT Scan)":
-        if data.get('tube_arcing',0)>0: score+=40; reasons.append("شرارة (Arcing)"); factors['Arc']=40
-        if data.get('gantry_temp',35)>85: score+=50; reasons.append("حرارة جانتري"); factors['Temp']=50
-        if abs(data.get('voltage',220)-220)>20: score+=30; reasons.append("تذبذب كهرباء"); factors['Elec']=30
+        if data.get('tube_arcing',0)>0: 
+            score+=40; reasons.append("شرارة داخل الأنبوب (Arcing)"); factors['Arc']=40
+            actions.append("إجراء Tube Conditioning فوراً")
+        if data.get('gantry_temp',35)>85: 
+            score+=50; reasons.append("حرارة الجانتري حرجة"); factors['Temp']=50
+            actions.append("إيقاف الفحص وفتح أغطية الجانتري")
+        if abs(data.get('voltage',220)-220)>20: 
+            score+=30; reasons.append("تذبذب في التيار الكهربائي"); factors['Elec']=30
+            actions.append("فحص الـ UPS ومنظم الجهد")
+
     elif dev == "الفلورسكوبي (Fluoro)": 
-        if data.get('voltage',220)<190: score+=30; reasons.append("انخفاض جهد"); factors['Elec']=30
-        if data.get('error_logs',0)>10: score+=35; reasons.append("أخطاء نظام"); factors['Soft']=35
+        if data.get('voltage',220)<190: 
+            score+=30; reasons.append("انخفاض جهد الدخل"); factors['Elec']=30
+            actions.append("فحص كابلات الباور")
+        if data.get('error_logs',0)>10: 
+            score+=35; reasons.append("أخطاء نظام متكررة"); factors['Soft']=35
+            actions.append("إعادة تشغيل النظام (System Reboot)")
+
     elif dev == "الأشعة السينية (X-Ray)":
-        if data.get('exposure_errors',0)>3: score+=45; reasons.append("فشل تصوير"); factors['Gen']=45
+        if data.get('exposure_errors',0)>3: 
+            score+=45; reasons.append("فشل متكرر في التصوير"); factors['Gen']=45
+            actions.append("فحص زر الـ Handswitch والمولد")
 
     score = min(score, 100)
     
-    # [FIX]: Return 6 values including CSS class and reasons
-    if score >= 50: return score, "DANGER / خطر", "crit", reasons, factors, "#ef4444"
-    elif score >= 20: return score, "WARNING / تحذير", "warn", reasons, factors, "#eab308"
-    return score, "SAFE / آمن", "safe", reasons, factors, "#22c55e"
+    # إرجاع القيم (بما فيها قائمة actions)
+    if score >= 50: return score, "DANGER / خطر", "crit", reasons, actions, factors, "#ef4444"
+    elif score >= 20: return score, "WARNING / تحذير", "warn", reasons, actions, factors, "#eab308"
+    return score, "SAFE / آمن", "safe", reasons, actions, factors, "#22c55e"
 
-# [FIX]: Unpack exactly 6 values
-score, status, css, reasons, factors, clr = analyze(device_type, inputs)
+# تشغيل التحليل
+score, status, css, reasons, actions, factors, clr = analyze(device_type, inputs)
 
 # === القسم الأيسر: الداشبورد ===
 with col_dashboard:
@@ -200,8 +233,9 @@ with col_dashboard:
     # 2. منطقة الرسم البياني والتشخيص
     grid_c1, grid_c2 = st.columns([2, 1])
 
+    # === المربع الكبير (الرسوم) ===
     with grid_c1:
-        with st.container(border=True): # المربع الكبير
+        with st.container(border=True): 
             if sum(factors.values()) > 0:
                 st.markdown("#### 📊 تحليل الأسباب الجذرية")
                 fig_bar = px.bar(x=list(factors.keys()), y=list(factors.values()), color=list(factors.values()), color_continuous_scale='Reds', template=chart_theme)
@@ -222,16 +256,24 @@ with col_dashboard:
                 <br><br>
                 """, unsafe_allow_html=True)
 
+    # === المربع الجانبي (الحالة + التوصيات) ===
     with grid_c2:
         with st.container(border=True):
-            # [FIX]: CSS class used here is now correctly returned
             st.markdown(f"""<div class="status-box {css}" style="font-size:1.4em;">{status}</div>""", unsafe_allow_html=True)
+            
             st.markdown(f"**📋 التشخيص:**")
-            # [FIX]: Reasons used here are now correctly returned
             if reasons:
-                for r in reasons: st.markdown(f"- {r}")
+                for r in reasons: st.markdown(f"- 🔴 {r}")
             else: st.markdown("- لا توجد أعطال")
-            st.markdown("<br>", unsafe_allow_html=True)
+            
+            st.markdown("---")
+            
+            # عرض التوصيات هنا
+            st.markdown(f"**🛠️ التوصيات:**")
+            if actions:
+                for a in actions: st.markdown(f"- ✅ {a}")
+            else:
+                st.markdown("- المتابعة الروتينية")
             
         with st.container(border=True):
             gauge_text_color = "white" if is_dark else "#0f172a"
