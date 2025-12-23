@@ -5,226 +5,268 @@ import plotly.graph_objects as go
 import numpy as np
 
 # --- 1. إعداد الصفحة ---
-st.set_page_config(page_title="نظام التنبؤ الذكي بالأعطال", layout="wide", page_icon="⚙️")
+st.set_page_config(page_title="محاكي تحليل الأعطال", layout="wide", page_icon="🎛️")
 
-# CSS
+# CSS لتنسيق العربية
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;700;800&display=swap');
 * { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; }
-h1, h2, h3 { color: #0f172a; }
-.risk-card {
-    padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #ddd;
-    box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+.stSlider > div > div > div > div { background-color: #0ea5e9; }
+.metric-box {
+    padding: 15px; border-radius: 10px; border: 1px solid #e0f2fe;
+    text-align: center; background-color: #f8fafc;
 }
-.critical { background-color: #fee2e2; border-right: 5px solid #ef4444; color: #7f1d1d; }
-.warning { background-color: #fffbeb; border-right: 5px solid #f59e0b; color: #92400e; }
-.safe { background-color: #f0fdf4; border-right: 5px solid #22c55e; color: #166534; }
+.diagnosis-box {
+    padding: 20px; border-radius: 10px; margin-top: 20px;
+}
+.safe-box { background-color: #dcfce7; border: 1px solid #22c55e; color: #14532d; }
+.warn-box { background-color: #fef3c7; border: 1px solid #f59e0b; color: #78350f; }
+.crit-box { background-color: #fee2e2; border: 1px solid #ef4444; color: #7f1d1d; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. لوحة الإعدادات (Settings Panel) ---
-# نضعها في دالة لسهولة الاستدعاء
-def get_user_thresholds():
-    thresholds = {}
+# --- 2. القائمة الجانبية (لوحة التحكم بالمحاكاة) ---
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/10606/10606037.png", width=80)
+    st.title("🎛️ لوحة المحاكاة")
     
-    with st.sidebar:
-        st.title("⚙️ ضبط المعايير (Settings)")
-        st.markdown("عدل القيم الحدية لإطلاق التنبيهات:")
-        
-        # 1. إعدادات الرنين
-        with st.expander("🧲 إعدادات الرنين (MRI)", expanded=False):
-            thresholds['mri_helium_crit'] = st.number_input("الحد الخطر للهيليوم (%)", value=40, step=1)
-            thresholds['mri_helium_warn'] = st.number_input("الحد التحذيري للهيليوم (%)", value=60, step=1)
-            thresholds['mri_chiller_max'] = st.number_input("أقصى حرارة للشيلر (°C)", value=20, step=1)
-            thresholds['mri_room_max'] = st.number_input("أقصى حرارة للغرفة (°C)", value=24, step=1)
-
-        # 2. إعدادات المقطعية
-        with st.expander("☢️ إعدادات المقطعية (CT)", expanded=False):
-            thresholds['ct_gantry_crit'] = st.number_input("حرارة الجانتري الخطرة (°C)", value=85, step=1)
-            thresholds['ct_gantry_warn'] = st.number_input("حرارة الجانتري التحذيرية (°C)", value=60, step=1)
-            thresholds['ct_volt_tol'] = st.number_input("سماحية تذبذب الجهد (±V)", value=20, step=1)
-
-        # 3. إعدادات الفلورو
-        with st.expander("📺 إعدادات الفلورو (Fluoro)", expanded=False):
-            thresholds['fl_volt_min'] = st.number_input("أقل جهد مسموح (V)", value=190, step=5)
-            thresholds['fl_volt_max'] = st.number_input("أعلى جهد مسموح (V)", value=250, step=5)
-            thresholds['fl_humidity_max'] = st.slider("أقصى رطوبة مسموحة (%)", 0, 100, 75)
-
-        # 4. إعدادات الأشعة
-        with st.expander("🦴 إعدادات الأشعة (X-Ray)", expanded=False):
-            thresholds['xr_tube_max'] = st.number_input("أقصى حرارة للأنبوب (°C)", value=55, step=1)
-            thresholds['xr_life_hours'] = st.number_input("العمر الافتراضي (ساعة)", value=25000, step=1000)
-
-    return thresholds
-
-# --- 3. محرك التنبؤ (يستقبل الإعدادات الآن) ---
-def predict_faults(df, device_type, limits):
-    alerts = []
+    # اختيار الجهاز
+    device_type = st.selectbox("اختر الجهاز للمحاكاة:", 
+                               ["الرنين المغناطيسي (MRI)", "الأشعة المقطعية (CT Scan)", 
+                                "الفلورسكوبي (Fluoro)", "الأشعة السينية (X-Ray)"])
     
-    for index, row in df.iterrows():
-        device_id = row['Device_ID']
-        risk_score = 0
-        reasons = []
-        status_label = "سليمة 🟢"
-        status_cat = "Safe"
-        action = "لا يوجد إجراء مطلوب"
-        css_class = "safe"
+    st.markdown("---")
+    st.subheader("أدخل المعطيات الحالية:")
 
-        # ================== منطق الرنين (MRI) ==================
-        if device_type == 'MRI':
-            if row['Helium_Level'] < limits['mri_helium_crit']:
-                risk_score += 50
-                reasons.append(f"هيليوم حرج (<{limits['mri_helium_crit']}%)")
-                action = "تعبئة طارئة وفحص التنفيس"
-            elif row['Helium_Level'] < limits['mri_helium_warn']:
-                risk_score += 20
-                reasons.append("انخفاض هيليوم")
-                action = "جدولة تعبئة"
-            
-            if row['Chiller_Temp'] > limits['mri_chiller_max']:
-                risk_score += 30
-                reasons.append(f"حرارة شيلر مرتفعة (>{limits['mri_chiller_max']}°C)")
-            
-            if row['Room_Temp'] > limits['mri_room_max']:
-                risk_score += 15
-                reasons.append("حرارة الغرفة مرتفعة")
+    # متغيرات سيتم ملؤها حسب نوع الجهاز
+    inputs = {}
 
-        # ================== منطق المقطعية (CT) ==================
-        elif device_type == 'CT':
-            if row['Gantry_Temp'] > limits['ct_gantry_crit']:
-                risk_score += 50
-                reasons.append(f"حرارة جانتري خطرة (>{limits['ct_gantry_crit']}°C)")
-                action = "إيقاف للتبريد فوراً"
-            elif row['Gantry_Temp'] > limits['ct_gantry_warn']:
-                risk_score += 20
-                reasons.append("ارتفاع حرارة الجانتري")
+    if device_type == "الرنين المغناطيسي (MRI)":
+        inputs['room_temp'] = st.slider("🌡️ درجة حرارة الغرفة (°C)", 15, 35, 22)
+        inputs['chiller_temp'] = st.slider("❄️ درجة حرارة الشيلر (°C)", 5, 30, 10)
+        inputs['humidity'] = st.slider("💧 الرطوبة (%)", 20, 90, 45)
+        inputs['helium'] = st.slider("🎈 مستوى الهيليوم (%)", 0, 100, 85)
+        inputs['cont_hours'] = st.slider("⏱️ ساعات تشغيل متواصلة", 0, 24, 4)
+        inputs['total_cases'] = st.slider("busts عدد الحالات اليومي", 0, 50, 15)
+        inputs['total_usage'] = st.number_input("⏳ العمر التشغيلي (ساعة)", 0, 100000, 20000)
 
-            if abs(row['Gantry_Voltage'] - 220) > limits['ct_volt_tol']:
-                risk_score += 30
-                reasons.append("تذبذب كهرباء شديد")
-                action = "فحص Stabilizer"
+    elif device_type == "الأشعة المقطعية (CT Scan)":
+        inputs['room_temp'] = st.slider("🌡️ حرارة الغرفة (°C)", 15, 35, 22)
+        inputs['gantry_temp'] = st.slider("☢️ حرارة الجانتري (°C)", 20, 100, 35)
+        inputs['voltage'] = st.slider("⚡ جهد الجانتري (V)", 180, 260, 220)
+        inputs['current'] = st.slider("امبير التيار (mA)", 5, 20, 10)
+        inputs['humidity'] = st.slider("💧 الرطوبة (%)", 20, 90, 40)
+        inputs['cont_hours'] = st.slider("⏱️ ساعات تشغيل متواصلة", 0, 24, 6)
+        inputs['total_usage'] = st.number_input("⏳ العمر التشغيلي (ساعة)", 0, 100000, 30000)
 
-        # ================== منطق الفلورو (Fluoro) ==================
-        elif device_type == 'Fluoro':
-            if row['Voltage_V'] < limits['fl_volt_min'] or row['Voltage_V'] > limits['fl_volt_max']:
-                risk_score += 40
-                reasons.append("جهد كهربائي خارج النطاق")
-                action = "فحص وحدة التغذية (PSU)"
-            if row['Humidity'] > limits['fl_humidity_max']:
-                risk_score += 15
-                reasons.append(f"رطوبة عالية (>{limits['fl_humidity_max']}%)")
+    elif device_type == "الفلورسكوبي (Fluoro)":
+        inputs['voltage'] = st.slider("⚡ الجهد الكهربائي (V)", 150, 280, 220)
+        inputs['humidity'] = st.slider("💧 الرطوبة (%)", 10, 100, 45)
+        inputs['tube_temp'] = st.slider("🔥 حرارة الأنبوب (°C)", 20, 80, 30)
+        inputs['cont_hours'] = st.slider("⏱️ ساعات تشغيل متواصلة", 0, 12, 2)
+        inputs['total_usage'] = st.number_input("⏳ العمر التشغيلي (ساعة)", 0, 100000, 15000)
 
-        # ================== منطق الأشعة (XRay) ==================
-        elif device_type == 'XRay':
-            if row['Tube_Temp'] > limits['xr_tube_max']:
-                risk_score += 45
-                reasons.append(f"حرارة الأنبوب مرتفعة (>{limits['xr_tube_max']}°C)")
-                action = "استبدال الزيت / تبريد"
-            if row['Usage_Hours'] > limits['xr_life_hours']:
-                risk_score += 25
-                reasons.append("تجاوز العمر الافتراضي")
-                action = "خطة إحلال"
+    elif device_type == "الأشعة السينية (X-Ray)":
+        inputs['tube_temp'] = st.slider("🔥 حرارة الأنبوب (°C)", 20, 90, 35)
+        inputs['voltage'] = st.slider("⚡ الجهد العالي (kV)", 40, 150, 70) # هنا kV
+        inputs['cont_hours'] = st.slider("⏱️ ساعات العمل اليومي", 0, 24, 8)
+        inputs['total_usage'] = st.number_input("⏳ العمر التشغيلي (ساعة)", 0, 100000, 25000)
 
-        # --- التصنيف النهائي ---
-        if risk_score >= 50:
-            status_label = "توقف وشيك / خطر 🔴"
-            status_cat = "Critical"
-            css_class = "critical"
-        elif risk_score >= 20:
-            status_label = "تعمل ولكن حرجة 🟡"
-            status_cat = "Warning"
-            css_class = "warning"
-        else:
-            status_label = "تعمل بكفاءة (سليمة) 🟢"
-            status_cat = "Safe"
-            css_class = "safe"
-            reasons.append("الأداء ضمن المعدلات الطبيعية")
+# --- 3. محرك المنطق والتحليل (Physics Engine) ---
+def analyze_simulation(dev, data):
+    risk_score = 0
+    factors = {} # لتخزين نسبة مساهمة كل عامل في الخطر
+    reasons = []
+    actions = []
 
-        alerts.append({
-            "Device_ID": device_id,
-            "Status_Label": status_label,
-            "Status_Category": status_cat,
-            "Reasons": " + ".join(reasons),
-            "Action": action,
-            "Risk_Score": risk_score,
-            "Class": css_class
-        })
+    # 1. منطق الرنين (MRI Logic)
+    if dev == "الرنين المغناطيسي (MRI)":
+        # الهيليوم (وزن عالي)
+        if data['helium'] < 40:
+            risk_score += 50
+            reasons.append("خطر Quench (توقف المغناطيس)")
+            actions.append("تعبئة هيليوم طارئة")
+            factors['Helium'] = 50
+        elif data['helium'] < 60:
+            risk_score += 20
+            reasons.append("انخفاض مستوى الهيليوم")
+            actions.append("طلب تعبئة")
+            factors['Helium'] = 20
+        else: factors['Helium'] = 0
 
-    return pd.DataFrame(alerts)
+        # الشيلر والحرارة
+        if data['chiller_temp'] > 20:
+            risk_score += 30
+            reasons.append("فشل نظام تبريد الشيلر")
+            actions.append("فحص ضاغط الشيلر ومضخة الماء")
+            factors['Cooling'] = 30
+        else: factors['Cooling'] = 0
 
-# --- 4. دالة الرسم (Gauge) ---
-def plot_site_health(all_data):
-    total = len(all_data)
-    safe = len(all_data[all_data['Status_Category'] == 'Safe'])
-    score = (safe / total) * 100 if total > 0 else 0
-    
-    fig = go.Figure(go.Indicator(
+        # تأثير التشغيل المتواصل على الحرارة
+        # معادلة افتراضية: لو الغرفة حارة + تشغيل طويل = خطر
+        heat_stress = (data['room_temp'] * 0.5) + (data['cont_hours'] * 1.5)
+        if heat_stress > 25: # عتبة افتراضية
+            risk_score += 15
+            reasons.append("إجهاد حراري بسبب التشغيل المستمر")
+            factors['Usage Stress'] = 15
+        else: factors['Usage Stress'] = 0
+
+    # 2. منطق المقطعية (CT Logic)
+    elif dev == "الأشعة المقطعية (CT Scan)":
+        # حرارة الجانتري
+        if data['gantry_temp'] > 85:
+            risk_score += 50
+            reasons.append("حرارة الجانتري حرجة جداً")
+            actions.append("إيقاف الجهاز للتبريد فوراً")
+            factors['Temperature'] = 50
+        elif data['gantry_temp'] > 60:
+            risk_score += 25
+            reasons.append("ارتفاع حرارة المكونات الداخلية")
+            factors['Temperature'] = 25
+        else: factors['Temperature'] = 0
+
+        # الكهرباء
+        volt_diff = abs(data['voltage'] - 220)
+        if volt_diff > 20:
+            risk_score += 30
+            reasons.append("تذبذب شديد في الجهد الكهربائي")
+            actions.append("فحص منظم الجهد (Stabilizer)")
+            factors['Electrical'] = 30
+        else: factors['Electrical'] = 0
+
+        # العمر
+        if data['total_usage'] > 40000:
+            risk_score += 15
+            reasons.append("الجهاز تجاوز العمر الافتراضي للكفاءة")
+            factors['Aging'] = 15
+        else: factors['Aging'] = 0
+
+    # 3. منطق الفلورو (Fluoro Logic)
+    elif dev == "الفلورسكوبي (Fluoro)":
+        # الرطوبة (خطر كهربائي)
+        if data['humidity'] > 75:
+            risk_score += 40
+            reasons.append("رطوبة عالية (خطر قصر دائرة)")
+            actions.append("تشغيل مزيلات الرطوبة فوراً")
+            factors['Humidity'] = 40
+        else: factors['Humidity'] = 0
+
+        # الجهد
+        if data['voltage'] < 190:
+            risk_score += 30
+            reasons.append("انخفاض الجهد (Under Voltage)")
+            factors['Electrical'] = 30
+        else: factors['Electrical'] = 0
+
+    # 4. منطق الإكس راي (X-Ray Logic)
+    elif dev == "الأشعة السينية (X-Ray)":
+        if data['tube_temp'] > 60:
+            risk_score += 45
+            reasons.append("حرارة الأنبوب مرتفعة")
+            actions.append("توقف عن التصوير لتبريد الزيت")
+            factors['Tube Heat'] = 45
+        else: factors['Tube Heat'] = 0
+
+    # تقييم نهائي
+    risk_score = min(risk_score, 100) # لا يزيد عن 100
+    if risk_score >= 50:
+        status = "خطر مرتفع 🔴"
+        box_class = "crit-box"
+    elif risk_score >= 20:
+        status = "تحذير 🟡"
+        box_class = "warn-box"
+    else:
+        status = "آمن 🟢"
+        box_class = "safe-box"
+        reasons.append("المؤشرات ضمن المعدل الطبيعي")
+        actions.append("استمرار المراقبة الروتينية")
+
+    return risk_score, status, box_class, reasons, actions, factors
+
+# --- 4. واجهة العرض الرئيسية ---
+st.title(f"معمل تحليل: {device_type}")
+st.markdown("قم بتغيير المعطيات من القائمة الجانبية ولاحظ كيف يحلل النظام المخاطر.")
+
+# تشغيل التحليل
+score, status, css, reasons, actions, factors = analyze_simulation(device_type, inputs)
+
+# عرض النتيجة الرئيسية (KPIs)
+col1, col2, col3 = st.columns([1, 2, 1])
+
+with col1:
+    # عداد السرعة للخطر
+    fig_gauge = go.Figure(go.Indicator(
         mode = "gauge+number", value = score,
-        title = {'text': "مؤشر الجاهزية العامة للموقع"},
-        gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#22c55e"},
-                 'steps': [{'range': [0, 50], 'color': '#fee2e2'}, {'range': [50, 80], 'color': '#fef3c7'}, {'range': [80, 100], 'color': '#dcfce7'}]}))
-    fig.update_layout(height=250, margin=dict(l=20,r=20,t=40,b=20))
-    return fig
+        title = {'text': "مؤشر الخطر الحالي"},
+        gauge = {'axis': {'range': [None, 100]},
+                 'bar': {'color': "#ef4444" if score>50 else "#f59e0b" if score>20 else "#22c55e"},
+                 'steps': [{'range': [0, 20], 'color': '#dcfce7'}, 
+                           {'range': [20, 50], 'color': '#fef3c7'},
+                           {'range': [50, 100], 'color': '#fee2e2'}]}))
+    fig_gauge.update_layout(height=250, margin=dict(l=10,r=10,t=30,b=10))
+    st.plotly_chart(fig_gauge, use_container_width=True)
 
-# --- 5. التطبيق الرئيسي ---
-# استدعاء الإعدادات أولاً
-user_limits = get_user_thresholds()
+with col2:
+    # صندوق التشخيص
+    st.markdown(f"""
+    <div class="diagnosis-box {css}">
+        <h2 style="margin:0; text-align:center;">{status}</h2>
+        <hr style="border-color:rgba(0,0,0,0.1)">
+        <h4 style="margin-bottom:5px;">🧐 التشخيص التحليلي (الأسباب):</h4>
+        <ul>{''.join([f'<li>{r}</li>' for r in reasons])}</ul>
+        <h4 style="margin-bottom:5px;">🛠️ الإجراء الموصى به:</h4>
+        <ul>{''.join([f'<li>{a}</li>' for a in actions])}</ul>
+    </div>
+    """, unsafe_allow_html=True)
 
-st.sidebar.markdown("---")
-uploaded_file = st.sidebar.file_uploader("📂 رفع البيانات (Excel)", type=['xlsx'])
+with col3:
+    # تفاصيل سريعة
+    st.markdown("### 📊 القراءات الحالية")
+    for key, val in inputs.items():
+        # تنسيق الاسم للعرض
+        name = key.replace('_', ' ').title()
+        st.metric(name, val)
 
-# فلتر العرض
-filter_options = {"Critical": "🔴 خطر", "Warning": "🟡 تحذير", "Safe": "🟢 سليم"}
-selected_filters = st.sidebar.multiselect("تصفية العرض:", list(filter_options.keys()), default=["Critical", "Warning", "Safe"], format_func=lambda x: filter_options[x])
+st.markdown("---")
 
-st.title("🏥 مركز القيادة الموحد (مع ضبط المعايير)")
+# --- 5. الرسوم البيانية التحليلية (Visual Correlation) ---
+col_charts1, col_charts2 = st.columns(2)
 
-if uploaded_file:
-    try:
-        xls = pd.ExcelFile(uploaded_file)
-        full_report = pd.DataFrame()
-        processed_data = {}
-        
-        # معالجة البيانات مع تمرير الإعدادات (user_limits)
-        for dtype in ['MRI', 'CT', 'Fluoro', 'XRay']:
-            raw_df = pd.read_excel(xls, dtype)
-            analyzed_df = predict_faults(raw_df, dtype, user_limits) # 👈 تمرير الإعدادات هنا
-            processed_data[dtype] = analyzed_df
-            full_report = pd.concat([full_report, analyzed_df])
+with col_charts1:
+    st.subheader("تحليل مسببات الخطر (Risk Factors)")
+    if sum(factors.values()) > 0:
+        # رسم دائري يوضح ما هو السبب الأكبر في الخطر
+        fig_pie = px.pie(names=list(factors.keys()), values=list(factors.values()), 
+                         title="ما هو العامل المؤثر الأكبر الآن؟", hole=0.4)
+        st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info("الجهاز سليم، لا توجد عوامل خطر لعرضها.")
 
-        st.plotly_chart(plot_site_health(full_report), use_container_width=True)
-        
-        tab1, tab2, tab3, tab4 = st.tabs(["🧲 الرنين", "☢️ المقطعية", "📺 الفلورو", "🦴 الأشعة"])
-        
-        def display_tab(dtype):
-            df = processed_data[dtype]
-            df_filt = df[df['Status_Category'].isin(selected_filters)]
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("العدد الكلي", len(df_filt))
-            c2.metric("الحرجة", len(processed_data[dtype][processed_data[dtype]['Status_Category']=='Critical']), delta_color="inverse")
-            
-            st.markdown("---")
-            if df_filt.empty: st.info("لا توجد نتائج.")
-            else:
-                for i, row in df_filt.iterrows():
-                    st.markdown(f"""
-                    <div class="risk-card {row['Class']}">
-                        <div style="display:flex; justify-content:space-between;">
-                            <h3>{row['Device_ID']}</h3>
-                            <b>{row['Status_Label']}</b>
-                        </div>
-                        <hr style="margin:5px 0; border-color:#eee">
-                        <p><b>السبب:</b> {row['Reasons']}</p>
-                        <p><b>الإجراء:</b> {row['Action']}</p>
-                    </div>""", unsafe_allow_html=True)
+with col_charts2:
+    st.subheader("محاكاة العلاقة (Correlation Simulation)")
+    # رسم يوضح أين تقع نقطتك الحالية مقارنة بمنطقة الخطر
+    # سنصنع بيانات وهمية للخلفية لكي تظهر "منطقة الخطر"
+    
+    if device_type == "الرنين المغناطيسي (MRI)":
+        # رسم العلاقة بين الهيليوم وحرارة الشيلر
+        fig_sim = go.Figure()
+        # منطقة الخطر
+        fig_sim.add_shape(type="rect", x0=20, y0=0, x1=35, y1=50, fillcolor="red", opacity=0.2, line_width=0)
+        # النقطة الحالية
+        fig_sim.add_trace(go.Scatter(x=[inputs['chiller_temp']], y=[inputs['helium']], 
+                                     mode='markers', marker=dict(size=20, color='black'), name='حالتك الحالية'))
+        fig_sim.update_layout(title="موقعك الحالي: الهيليوم vs الشيلر", 
+                              xaxis_title="حرارة الشيلر", yaxis_title="مستوى الهيليوم")
+        st.plotly_chart(fig_sim, use_container_width=True)
+        st.caption("المربع الأحمر يمثل منطقة الخطر (حرارة عالية + هيليوم منخفض).")
 
-        with tab1: display_tab('MRI')
-        with tab2: display_tab('CT')
-        with tab3: display_tab('Fluoro')
-        with tab4: display_tab('XRay')
-
-    except Exception as e: st.error(f"خطأ: {e}")
-else:
-    st.info("الرجاء رفع ملف البيانات.")
+    elif device_type == "الأشعة المقطعية (CT Scan)":
+        # رسم العلاقة بين حرارة الجانتري والفولت
+        fig_sim = go.Figure()
+        fig_sim.add_shape(type="rect", x0=180, y0=80, x1=260, y1=100, fillcolor="red", opacity=0.2, line_width=0)
+        fig_sim.add_trace(go.Scatter(x=[inputs['voltage']], y=[inputs['gantry_temp']], 
+                                     mode='markers', marker=dict(size=20, color='blue'), name='حالتك الحالية'))
+        fig_sim.update_layout(title="موقعك الحالي: الفولت vs حرارة الجانتري",
+                              xaxis_title="الجهد الكهربائي", yaxis_title="حرارة الجانتري")
+        st.plotly_chart(fig_sim, use_container_width=True)
