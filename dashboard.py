@@ -13,13 +13,15 @@ default_values = {
     "الأشعة السينية (X-Ray)": { "tube_temp": 35.0, "voltage": 70.0, "exposure_errors": 0, "cont_hours": 6.0, "tube_age": 15000.0, "room_temp": 22.0 }
 }
 
+# تهيئة الذاكرة
 if 'device_type' not in st.session_state: st.session_state['device_type'] = "الرنين المغناطيسي (MRI)"
 
 def update_state():
     selected = st.session_state.get("device_selector", "الرنين المغناطيسي (MRI)")
     st.session_state['device_type'] = selected
     for key, val in default_values[selected].items():
-        if key not in st.session_state: st.session_state[key] = val
+        if key not in st.session_state:
+            st.session_state[key] = val
 
 if "device_selector" not in st.session_state:
     st.session_state["device_selector"] = "الرنين المغناطيسي (MRI)"
@@ -158,10 +160,12 @@ def analyze(dev, data):
         if data.get('exposure_errors',0)>3: score+=45; reasons.append("فشل تصوير"); factors['Gen']=45
 
     score = min(score, 100)
+    # إرجاع 4 قيم: النتيجة، النص، لون العداد، لون الخلفية
     if score >= 50: return score, "DANGER / خطر", "#ef4444", "rgba(239, 68, 68, 0.1)"
     elif score >= 20: return score, "WARNING / تحذير", "#eab308", "rgba(234, 179, 8, 0.1)"
     return score, "SAFE / آمن", "#22c55e", "rgba(34, 197, 94, 0.1)"
 
+# استدعاء التحليل (تصحيح الأخطاء هنا)
 score, status, clr, bg_clr = analyze(device_type, inputs)
 
 # === القسم الأيسر: الداشبورد (داخل كروت) ===
@@ -217,6 +221,7 @@ with col_dashboard:
 
     with grid_c2:
         with st.container(border=True):
+            # استخدام المتغيرات bg_clr و clr بشكل صحيح هنا
             st.markdown(f"""<div style="background:{bg_clr}; border:1px solid {clr}; color:{clr}; padding:10px; border-radius:8px; text-align:center; font-weight:bold; font-size:1.4em; margin-bottom:10px;">{status}</div>""", unsafe_allow_html=True)
             st.markdown(f"**📋 التشخيص:**")
             if reasons:
