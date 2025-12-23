@@ -75,7 +75,7 @@ def smart_input(col, label, key, min_v, max_v, step, limit_text, icon="🔹"):
 # --- 5. الهيكل الرئيسي ---
 st.markdown(f"""<h2>🏥 مركز القيادة: <span class='highlight'>{device_type}</span></h2>""", unsafe_allow_html=True)
 
-col_inputs, col_dashboard = st.columns([1, 2])
+col_inputs, col_dashboard = st.columns([1, 2.2]) # تعديل النسبة لتوسيع الداشبورد
 
 # === قسم المدخلات (يمين) ===
 with col_inputs:
@@ -112,14 +112,13 @@ with col_inputs:
         inputs['tube_age'] = smart_input(st, "عمر التيوب", "tube_age", 0.0, 500000.0, 1000.0, f"Max {limit_txt}", "⏳")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# === دالة التحليل (Logic) ===
+# === دالة التحليل ===
 def analyze(dev, data):
     score = 0; factors = {}; reasons = []; actions = []
-    # Global
     if data.get('room_temp',22) > 24: score+=15; reasons.append(f"حرارة الغرفة {data['room_temp']}°"); factors['Room']=15
     if data.get('humidity',45) > 70: score+=20; reasons.append(f"رطوبة عالية {data['humidity']}%"); factors['Hum']=20
     if data.get('cont_hours',0) > 10: score+=15; reasons.append("إجهاد تشغيل"); factors['Work']=15
-    # Specific
+    
     if dev == "الرنين المغناطيسي (MRI)":
         if data['helium']<40: score+=50; reasons.append("خطر Quench"); factors['He']=50
         elif data['helium']<60: score+=20; reasons.append("نقص هيليوم"); factors['He']=20
@@ -148,10 +147,9 @@ def analyze(dev, data):
     else: status="SAFE / آمن"; css="safe"; clr="#22c55e"
     return score, status, css, reasons, factors, clr
 
-# === استدعاء الدالة وحساب النتائج ===
 score, status, css, reasons, factors, clr = analyze(device_type, inputs)
 
-# === قسم النتائج (يسار) ===
+# === قسم النتائج (الداشبورد) ===
 with col_dashboard:
     # 1. شريط الحالة العلوي (HUD)
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
@@ -177,29 +175,48 @@ with col_dashboard:
         metric_card(hud4, "الرطوبة", inputs['humidity'], "%")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 2. منطقة التحليل والحالة (التخطيط المصحح)
-    c_charts, c_status = st.columns([1.8, 1.2])
+    # 2. منطقة التحليل (Grid Layout) - التعديل النهائي للإصلاح
+    c_charts, c_status = st.columns([1.6, 1]) # تقسيم 60% يسار، 40% يمين
 
-    # --- العمود الأيسر (الكبير): الرسوم البيانية ---
+    # --- العمود الأيسر (كارت كبير للرسوم) ---
     with c_charts:
-        st.markdown('<div class="glass-card" style="height:440px; display:flex; flex-direction:column;">', unsafe_allow_html=True)
+        st.markdown('<div class="glass-card" style="height:440px; display:flex; flex-direction:column; justify-content:center;">', unsafe_allow_html=True)
         if sum(factors.values()) > 0:
             st.markdown(f"#### 📊 تحليل الأسباب الجذرية")
             fig_bar = px.bar(x=list(factors.keys()), y=list(factors.values()), color=list(factors.values()), color_continuous_scale='Reds', template=chart_template)
-            fig_bar.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="درجة الخطر", coloraxis_showscale=False, margin=dict(t=10,b=10,l=10,r=10), height=180)
+            fig_bar.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="الخطر", coloraxis_showscale=False, margin=dict(t=10,b=10,l=10,r=10), height=180)
             st.plotly_chart(fig_bar, use_container_width=True)
             
             fig_pie = px.pie(names=list(factors.keys()), values=list(factors.values()), hole=0.6, template=chart_template)
-            fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5), margin=dict(t=0,b=20,l=10,r=10), height=160)
+            fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(t=0,b=20,l=10,r=10), height=160)
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
-            st.markdown(f"""<div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; opacity:0.8;"><img src="https://cdn-icons-png.flaticon.com/512/1161/1161388.png" width="120" style="margin-bottom:20px; filter: grayscale(100%);"><h2 style="color:{text_color}; margin:0;">النظام مستقر</h2><p style="color:{sub_text};">جميع المؤشرات الحيوية والتشغيلية في النطاق الآمن.</p></div>""", unsafe_allow_html=True)
+            # أيقونة الامان لملء الفراغ
+            st.markdown(f"""
+            <div style="text-align:center; opacity:0.7;">
+                <h1 style="font-size:5em; margin:0;">🛡️</h1>
+                <h2 style="color:{text_color};">النظام آمن</h2>
+                <p style="color:{sub_text};">جميع المؤشرات في النطاق الطبيعي</p>
+            </div>
+            """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- العمود الأيمن (الأصغر): الحالة والعداد ---
+    # --- العمود الأيمن (كارتان فوق بعض) ---
     with c_status:
-        st.markdown(f"""<div class="glass-card" style="height: 210px; display:flex; flex-direction:column; justify-content:center;"><div class="status-box {css}" style="font-size:1.4em;">{status}</div><div style="color:{text_color}; text-align:center;"><b>📋 التشخيص:</b><ul style="margin-top:5px; color:{sub_text}; text-align:right; font-size:0.9em; list-style-position: inside;">{''.join([f'<li>{r}</li>' for r in (reasons if reasons else ["لا توجد أعطال"])])}</ul></div></div>""", unsafe_allow_html=True)
+        # كارت 1: الحالة
+        st.markdown(f"""
+        <div class="glass-card" style="height: 210px; display:flex; flex-direction:column; justify-content:center;">
+            <div class="status-box {css}" style="font-size:1.4em;">{status}</div>
+            <div style="color:{text_color}; text-align:center;">
+                <b>📋 التشخيص:</b>
+                <ul style="margin-top:5px; color:{sub_text}; text-align:right; font-size:0.9em; list-style-position: inside;">
+                    {''.join([f'<li>{r}</li>' for r in (reasons if reasons else ["لا توجد أعطال"])])}
+                </ul>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
+        # كارت 2: العداد
         st.markdown('<div class="glass-card" style="height: 210px;">', unsafe_allow_html=True)
         gauge_text_color = "white" if is_dark else "#0f172a"
         fig_gauge = go.Figure(go.Indicator(mode = "gauge+number", value = score, title = {'text': "مؤشر الخطر", 'font': {'color': gauge_text_color, 'size': 14}}, number = {'font': {'color': gauge_text_color, 'size': 30}}, gauge = {'axis': {'range': [None, 100], 'tickcolor': gauge_text_color}, 'bar': {'color': clr}, 'bgcolor': "rgba(0,0,0,0)", 'borderwidth': 0, 'steps': [{'range': [0, 20], 'color': 'rgba(34, 197, 94, 0.3)'}, {'range': [20, 50], 'color': 'rgba(234, 179, 8, 0.3)'}, {'range': [50, 100], 'color': 'rgba(239, 68, 68, 0.3)'}]}))
