@@ -5,7 +5,7 @@ import plotly.express as px
 # --- 1. إعداد الصفحة ---
 st.set_page_config(page_title="المحاكي الذكي للأعطال", layout="wide", page_icon="🎛️")
 
-# --- 2. إدارة القيم الافتراضية ---
+# --- 2. القيم الافتراضية ---
 default_values = {
     "الرنين المغناطيسي (MRI)": {
         "helium": 85.0, "comp_pressure": 20.0, "chiller_temp": 10.0, "room_temp": 22.0,
@@ -13,7 +13,7 @@ default_values = {
     },
     "الأشعة المقطعية (CT Scan)": {
         "gantry_temp": 35.0, "voltage": 220.0, "tube_arcing": 0, "tube_age": 50000.0,
-        "cont_hours": 4.0, "fan_rpm": 3000, "humidity": 40.0
+        "cont_hours": 4.0, "fan_rpm": 3000, "room_temp": 22.0, "humidity": 40.0
     },
     "الفلورسكوبي (Fluoro)": {
         "voltage": 220.0, "tube_temp": 30.0, "error_logs": 0,
@@ -21,7 +21,7 @@ default_values = {
     },
     "الأشعة السينية (X-Ray)": {
         "tube_temp": 35.0, "voltage": 70.0, "exposure_errors": 0,
-        "cont_hours": 6.0, "tube_age": 15000.0
+        "cont_hours": 6.0, "tube_age": 15000.0, "room_temp": 22.0
     }
 }
 
@@ -30,55 +30,29 @@ def update_state(device):
     for key, val in default_values[device].items(): st.session_state[key] = val
 def on_device_change(): update_state(st.session_state.device_selector)
 
-# --- 3. CSS (تنسيق العناوين والحدود) ---
+# --- 3. CSS ---
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;700;800&display=swap');
 * { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; }
-
 .control-panel { background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
 .group-header { color: #1e293b; font-weight: 700; margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; font-size: 1.1em; }
 .result-container { padding: 20px; border-radius: 12px; height: 100%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
 .safe-box { background-color: #f0fdf4; border-top: 5px solid #22c55e; }
 .warn-box { background-color: #fffbeb; border-top: 5px solid #f59e0b; }
 .crit-box { background-color: #fef2f2; border-top: 5px solid #ef4444; }
-
-/* تنسيق حدود الأمان فوق الإدخال */
-.limit-badge {
-    font-size: 0.8em;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background-color: #e0f2fe;
-    color: #0369a1;
-    font-weight: bold;
-    float: left; /* جعل الحد على اليسار */
-}
-.input-label {
-    font-weight: bold;
-    color: #334155;
-    font-size: 0.95em;
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 2px;
-}
+.limit-badge { font-size: 0.8em; padding: 2px 8px; border-radius: 4px; background-color: #e0f2fe; color: #0369a1; font-weight: bold; float: left; }
+.input-label { font-weight: bold; color: #334155; font-size: 0.95em; display: flex; justify-content: space-between; margin-bottom: 2px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. دالة مساعدة لإنشاء خانة الإدخال مع الحد ---
 def smart_input(col, label, key, min_v, max_v, step, limit_text, help_txt=""):
-    # رسم العنوان والحد
-    col.markdown(f"""
-    <div class="input-label">
-        <span>{label}</span>
-        <span class="limit-badge">{limit_text}</span>
-    </div>
-    """, unsafe_allow_html=True)
-    # رسم خانة الإدخال (بدون عنوان لأننا رسمناه يدوياً)
+    col.markdown(f"""<div class="input-label"><span>{label}</span><span class="limit-badge">{limit_text}</span></div>""", unsafe_allow_html=True)
     return col.number_input("hidden", min_value=min_v, max_value=max_v, step=step, key=key, label_visibility="collapsed", help=help_txt)
 
 # --- 5. الهيدر ---
 c_h, c_s, c_r = st.columns([2, 1, 0.5])
-with c_h: st.title("🎛️ المحاكي (مع حدود الأمان)"); st.caption("الحدود الآمنة موضحة بالأزرق فوق كل خانة")
+with c_h: st.title("🎛️ المحاكي (تحديث الحساسية العالية)"); st.caption("الآن الرطوبة والحرارة تؤثر فوراً على كل الأجهزة")
 with c_s: device_type = st.selectbox("🔻 الجهاز:", list(default_values.keys()), key="device_selector", on_change=on_device_change)
 with c_r: 
     st.write(""); st.write("")
@@ -86,7 +60,7 @@ with c_r:
 
 if "helium" not in st.session_state and device_type == "الرنين المغناطيسي (MRI)": update_state(device_type)
 
-# --- 6. لوحة المدخلات (مع الحدود) ---
+# --- 6. المدخلات ---
 inputs = {}
 with st.container():
     st.markdown('<div class="control-panel">', unsafe_allow_html=True)
@@ -100,11 +74,11 @@ with st.container():
         inputs['chiller_temp'] = smart_input(c3, "❄️ حرارة شيلر", "chiller_temp", 0.0, 50.0, 0.5, "الخطر > 20°C")
         inputs['room_temp'] = smart_input(c4, "🌡️ حرارة غرفة", "room_temp", 10.0, 45.0, 0.5, "المثالي < 24°C")
         
-        st.markdown('<br><div class="group-header">2️⃣ التشغيل وجودة الصورة</div>', unsafe_allow_html=True)
+        st.markdown('<br><div class="group-header">2️⃣ التشغيل والبيئة</div>', unsafe_allow_html=True)
         c5, c6, c7 = st.columns(3)
         inputs['cont_hours'] = smart_input(c5, "⏱️ تشغيل متواصل", "cont_hours", 0.0, 24.0, 0.5, "يفضل < 12h")
         inputs['coil_snr'] = smart_input(c6, "📡 جودة (SNR)", "coil_snr", 0.0, 100.0, 1.0, "الخطر < 80%")
-        inputs['humidity'] = smart_input(c7, "💧 الرطوبة", "humidity", 0.0, 100.0, 1.0, "المثالي: 40-60%")
+        inputs['humidity'] = smart_input(c7, "💧 الرطوبة", "humidity", 0.0, 100.0, 1.0, "الخطر > 70%")
 
     # 2. CT Inputs
     elif device_type == "الأشعة المقطعية (CT Scan)":
@@ -116,10 +90,11 @@ with st.container():
         inputs['tube_age'] = smart_input(c4, "⏳ عمر تيوب (Scan)", "tube_age", 0.0, 500000.0, 1000.0, "Max: 200k")
 
         st.markdown('<br><div class="group-header">2️⃣ البيئة والمكونات</div>', unsafe_allow_html=True)
-        c5, c6, c7 = st.columns(3)
+        c5, c6, c7, c8 = st.columns(4)
         inputs['cont_hours'] = smart_input(c5, "⏱️ تشغيل متواصل", "cont_hours", 0.0, 24.0, 0.5, "يفضل < 12h")
         inputs['fan_rpm'] = smart_input(c6, "🌀 سرعة مراوح", "fan_rpm", 0, 5000, 100, "الخطر < 2000")
-        inputs['humidity'] = smart_input(c7, "💧 الرطوبة", "humidity", 0.0, 100.0, 1.0, "الخطر > 70%")
+        inputs['room_temp'] = smart_input(c7, "🌡️ حرارة الغرفة", "room_temp", 10.0, 45.0, 0.5, "المثالي < 24°C")
+        inputs['humidity'] = smart_input(c8, "💧 الرطوبة", "humidity", 0.0, 100.0, 1.0, "الخطر > 70%")
 
     # 3. Fluoro Inputs
     elif device_type == "الفلورسكوبي (Fluoro)":
@@ -140,18 +115,57 @@ with st.container():
         inputs['voltage'] = smart_input(c2, "⚡ جهد (kV)", "voltage", 0.0, 200.0, 1.0, "±10% من 70")
         inputs['exposure_errors'] = smart_input(c3, "🚫 فشل تصوير", "exposure_errors", 0, 20, 1, "يجب أن يكون 0")
         
-        c4, c5 = st.columns(2)
+        c4, c5, c6 = st.columns(3)
         inputs['cont_hours'] = smart_input(c4, "⏱️ تشغيل", "cont_hours", 0.0, 24.0, 0.5, "Low Stress")
         inputs['tube_age'] = smart_input(c5, "⏳ عمر التيوب", "tube_age", 0.0, 100000.0, 500.0, "Max: 25k")
+        inputs['room_temp'] = smart_input(c6, "🌡️ حرارة الغرفة", "room_temp", 10.0, 45.0, 0.5, "المثالي < 24°C")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 7. المحرك التحليلي (نفس المنطق السابق) ---
+# --- 7. المحرك التحليلي (تعديل: إضافة العوامل المشتركة بقوة) ---
 def analyze_simulation(dev, data):
     risk_score = 0
     factors = {}
     reasons = []
     actions = []
+
+    # ==========================================
+    # 🌍 العوامل المشتركة (تطبق على الكل أولاً)
+    # ==========================================
+    
+    # 1. حرارة الغرفة (Room Temp Impact)
+    # إذا الغرفة حارة > 24، نضيف 10 نقاط فوراً للجميع
+    r_temp = data.get('room_temp', 22) # (الفلورو لا يملك حساس غرفة، نعتبره 22)
+    if r_temp > 24:
+        risk_score += 15 # رفعنا النسبة ليكون التأثير ملحوظاً
+        reasons.append(f"حرارة الغرفة مرتفعة ({r_temp}°C)")
+        actions.append("فحص التكييف المركزي")
+        factors['Room Env'] = 15
+
+    # 2. الرطوبة (Humidity Impact)
+    hum = data.get('humidity', 45)
+    if hum > 70:
+        risk_score += 20
+        reasons.append(f"رطوبة عالية ({hum}%) - خطر كهربائي")
+        actions.append("تشغيل مزيلات الرطوبة")
+        factors['Humidity'] = 20
+    elif hum < 30:
+        risk_score += 10
+        reasons.append(f"رطوبة منخفضة ({hum}%) - خطر Static")
+        factors['Humidity'] = 10
+
+    # 3. التشغيل المتواصل (Continuous Operation)
+    hrs = data.get('cont_hours', 0)
+    if hrs > 10:
+        risk_score += 15
+        reasons.append(f"تشغيل متواصل مفرط ({hrs} ساعة)")
+        actions.append("إعطاء فترة راحة للجهاز")
+        factors['Overwork'] = 15
+
+
+    # ==========================================
+    # 🔧 العوامل الخاصة (Specific Factors)
+    # ==========================================
 
     # 1. الرنين
     if dev == "الرنين المغناطيسي (MRI)":
@@ -170,14 +184,15 @@ def analyze_simulation(dev, data):
         if data.get('fan_rpm', 3000) < 2000: risk_score += 20; reasons.append("ضعف مراوح"); factors['Fan']=20
         if data['gantry_temp'] > 85: risk_score+=50; reasons.append("حرارة جانتري"); factors['Temp']=50
         if abs(data['voltage']-220)>20: risk_score+=30; reasons.append("كهرباء"); factors['Elec']=30
-        if data['tube_age'] > 200000 and data['cont_hours'] > 4: risk_score += 20; reasons.append("إجهاد تيوب قديم"); factors['Stress']=20
+        # إجهاد التيوب
+        if data['tube_age'] > 200000: risk_score += 15; reasons.append("التيوب قديم"); factors['Age']=15
 
     # 3. الفلورو
     elif dev == "الفلورسكوبي (Fluoro)":
         logs = data.get('error_logs', 0)
         if logs > 10: risk_score += 35; reasons.append("أخطاء نظام"); factors['Soft']=35
-        if data['humidity'] > 70: risk_score+=40; reasons.append("رطوبة عالية"); factors['Hum']=40
         if data['voltage'] < 190: risk_score+=30; reasons.append("ضعف جهد"); factors['Elec']=30
+        if data['tube_temp'] > 70: risk_score+=30; reasons.append("حرارة أنبوب عالية"); factors['Temp']=30
 
     # 4. X-Ray
     elif dev == "الأشعة السينية (X-Ray)":
