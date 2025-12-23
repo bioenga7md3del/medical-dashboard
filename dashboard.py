@@ -3,25 +3,23 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 # --- 1. إعداد الصفحة ---
-st.set_page_config(page_title="Medical AI Command Center", layout="wide", page_icon="🏥")
+st.set_page_config(page_title="Medical Command Center", layout="wide", page_icon="🏥")
 
 # --- 2. القيم الافتراضية ---
 default_values = {
     "الرنين المغناطيسي (MRI)": { "helium": 85.0, "comp_pressure": 20.0, "chiller_temp": 10.0, "room_temp": 22.0, "cont_hours": 4.0, "coil_snr": 95.0, "humidity": 45.0 },
-    "الأشعة المقطعية (CT Scan)": { "gantry_temp": 35.0, "voltage": 220.0, "tube_arcing": 0, "tube_age": 50000.0, "cont_hours": 4.0, "fan_rpm": 3000, "room_temp": 22.0, "humidity": 40.0 },
-    "الفلورسكوبي (Fluoro)": { "voltage": 220.0, "tube_temp": 30.0, "error_logs": 0, "cont_hours": 2.0, "tube_age": 10000.0, "humidity": 45.0 },
-    "الأشعة السينية (X-Ray)": { "tube_temp": 35.0, "voltage": 70.0, "exposure_errors": 0, "cont_hours": 6.0, "tube_age": 15000.0, "room_temp": 22.0 }
+    "الأشعة المقطعية (CT Scan)": { "gantry_temp": 35.0, "voltage": 220.0, "tube_arcing": 0, "tube_age": 10000.0, "cont_hours": 4.0, "fan_rpm": 3000, "room_temp": 22.0, "humidity": 40.0 },
+    "الفلورسكوبي (Fluoro)": { "voltage": 220.0, "tube_temp": 30.0, "error_logs": 0, "cont_hours": 2.0, "tube_age": 5000.0, "humidity": 45.0 },
+    "الأشعة السينية (X-Ray)": { "tube_temp": 35.0, "voltage": 70.0, "exposure_errors": 0, "cont_hours": 6.0, "tube_age": 2000.0, "room_temp": 22.0 }
 }
 
-# تهيئة الذاكرة
 if 'device_type' not in st.session_state: st.session_state['device_type'] = "الرنين المغناطيسي (MRI)"
 
 def update_state():
     selected = st.session_state.get("device_selector", "الرنين المغناطيسي (MRI)")
     st.session_state['device_type'] = selected
     for key, val in default_values[selected].items():
-        if key not in st.session_state:
-            st.session_state[key] = val
+        if key not in st.session_state: st.session_state[key] = val
 
 if "device_selector" not in st.session_state:
     st.session_state["device_selector"] = "الرنين المغناطيسي (MRI)"
@@ -130,78 +128,71 @@ with col_inputs:
             st.write("")
             inputs['room_temp'] = smart_input(st, "حرارة الغرفة", "room_temp", 10.0, 45.0, 0.5, "المثالي < 24°C", "🌡️")
             inputs['humidity'] = smart_input(st, "الرطوبة %", "humidity", 0.0, 100.0, 1.0, "30-70%", "💧")
-            inputs['cont_hours'] = smart_input(st, "ساعات التشغيل", "cont_hours", 0.0, 24.0, 0.5, "يفضل < 10h", "⏱️")
-            limit_txt = "Max 200k" if "CT" in device_type else "Max 20k"
+            inputs['cont_hours'] = smart_input(st, "ساعات التشغيل", "cont_hours", 0.0, 24.0, 0.5, "يعتمد على العمر", "⏱️")
+            limit_txt = "Max 200k" if "CT" in device_type else "Max 50k"
             inputs['tube_age'] = smart_input(st, "عمر التيوب", "tube_age", 0.0, 500000.0, 1000.0, limit_txt, "⏳")
 
-# === منطق التحليل الذكي (تمت إضافة الإجراءات actions) ===
+# === منطق التحليل الذكي (تم التعديل: ربط العمر بساعات التشغيل) ===
 def analyze(dev, data):
     score = 0
     factors = {}
     reasons = []
-    actions = [] # القائمة الجديدة للمقترحات
+    actions = []
 
-    # Global Checks
+    # 1. معادلة الشيخوخة الديناميكية (Dynamic Aging Formula)
+    # كلما زاد عمر التيوب، قلت ساعات التشغيل المسموحة
+    
+    current_hours = data.get('cont_hours', 0)
+    current_age = data.get('tube_age', 0)
+    
+    # حدد الحد الأقصى للعمر بناء على الجهاز
+    max_life = 200000 if "CT" in dev else 50000 
+    
+    # حساب "ساعات العمل الآمنة" (Safe Hours Limit)
+    # المعادلة: التيوب الجديد (0) يتحمل 14 ساعة. التيوب المتهالك (Max) يتحمل 4 ساعات فقط.
+    age_factor = min(current_age / max_life, 1.0) # نسبة الاستهلاك من 0 إلى 1
+    safe_hours_limit = 14 - (10 * age_factor) # يبدأ من 14 وينخفض تدريجياً إلى 4
+    
+    # تطبيق التحقق
+    if current_hours > safe_hours_limit:
+        score += 20
+        reasons.append(f"إجهاد تشغيل ({current_hours}h) لتيوب حالته {(1-age_factor)*100:.0f}%")
+        factors['Work Stress'] = 20
+        actions.append(f"يجب إيقاف الجهاز. الحد الآمن لهذا التيوب حالياً هو {safe_hours_limit:.1f} ساعة")
+
+    # 2. الفحوصات العامة
     if data.get('room_temp',22) > 24: 
         score+=15; reasons.append("حرارة الغرفة مرتفعة"); factors['Room']=15
-        actions.append("فحص نظام التكييف المركزي")
+        actions.append("فحص التكييف")
     if data.get('humidity',45) > 70: 
-        score+=20; reasons.append("رطوبة عالية (خطر تكثف)"); factors['Hum']=20
-        actions.append("تشغيل مزيلات الرطوبة فوراً")
-    if data.get('cont_hours',0) > 10: 
-        score+=15; reasons.append("إجهاد تشغيل متواصل"); factors['Work']=15
-        actions.append("إيقاف الجهاز لمدة ساعة للتبريد")
+        score+=20; reasons.append("رطوبة عالية"); factors['Hum']=20
+        actions.append("مزيلات رطوبة")
 
-    # Specific Checks
+    # 3. الفحوصات الخاصة
     if dev == "الرنين المغناطيسي (MRI)":
-        if data.get('helium', 85)<40: 
-            score+=50; reasons.append("خطر Quench (فقد المغناطيسية)"); factors['He']=50
-            actions.append("استدعاء فريق الصيانة لتعبئة الهيليوم (طارئ)")
-        elif data.get('helium', 85)<60: 
-            score+=20; reasons.append("انخفاض مستوى الهيليوم"); factors['He']=20
-            actions.append("جدولة تعبئة هيليوم قريباً")
-            
-        p = data.get('comp_pressure',20)
-        if p<15 or p>25: 
-            score+=40; reasons.append("خلل في ضغط الكمبروسر"); factors['Comp']=40
-            actions.append("فحص الـ Cold Head والوصلات")
-            
-        if data.get('chiller_temp',10)>20: 
-            score+=30; reasons.append("فشل تبريد الشيلر"); factors['Cool']=30
-            actions.append("فحص مضخة المياه الخارجية")
+        # الرنين ليس له تيوب بنفس المعنى، لذا نعتمد على الهيليوم والضغط
+        if data.get('helium', 85)<40: score+=50; reasons.append("خطر Quench"); factors['He']=50; actions.append("تعبئة طارئة")
+        elif data.get('helium', 85)<60: score+=20; reasons.append("نقص هيليوم"); factors['He']=20
+        if data.get('comp_pressure',20)<15 or data.get('comp_pressure',20)>25: score+=40; reasons.append("ضغط كمبروسر"); factors['Comp']=40; actions.append("فحص Cold Head")
+        if data.get('chiller_temp',10)>20: score+=30; reasons.append("فشل شيلر"); factors['Cool']=30
 
     elif dev == "الأشعة المقطعية (CT Scan)":
-        if data.get('tube_arcing',0)>0: 
-            score+=40; reasons.append("شرارة داخل الأنبوب (Arcing)"); factors['Arc']=40
-            actions.append("إجراء Tube Conditioning فوراً")
-        if data.get('gantry_temp',35)>85: 
-            score+=50; reasons.append("حرارة الجانتري حرجة"); factors['Temp']=50
-            actions.append("إيقاف الفحص وفتح أغطية الجانتري")
-        if abs(data.get('voltage',220)-220)>20: 
-            score+=30; reasons.append("تذبذب في التيار الكهربائي"); factors['Elec']=30
-            actions.append("فحص الـ UPS ومنظم الجهد")
+        if data.get('tube_arcing',0)>0: score+=40; reasons.append("Arcing"); factors['Arc']=40; actions.append("Tube Conditioning")
+        if data.get('gantry_temp',35)>85: score+=50; reasons.append("حرارة جانتري"); factors['Temp']=50; actions.append("إيقاف فوري")
+        if abs(data.get('voltage',220)-220)>20: score+=30; reasons.append("كهرباء"); factors['Elec']=30
 
     elif dev == "الفلورسكوبي (Fluoro)": 
-        if data.get('voltage',220)<190: 
-            score+=30; reasons.append("انخفاض جهد الدخل"); factors['Elec']=30
-            actions.append("فحص كابلات الباور")
-        if data.get('error_logs',0)>10: 
-            score+=35; reasons.append("أخطاء نظام متكررة"); factors['Soft']=35
-            actions.append("إعادة تشغيل النظام (System Reboot)")
+        if data.get('voltage',220)<190: score+=30; reasons.append("جهد منخفض"); factors['Elec']=30
+        if data.get('error_logs',0)>10: score+=35; reasons.append("أخطاء نظام"); factors['Soft']=35
 
     elif dev == "الأشعة السينية (X-Ray)":
-        if data.get('exposure_errors',0)>3: 
-            score+=45; reasons.append("فشل متكرر في التصوير"); factors['Gen']=45
-            actions.append("فحص زر الـ Handswitch والمولد")
+        if data.get('exposure_errors',0)>3: score+=45; reasons.append("فشل تصوير"); factors['Gen']=45
 
     score = min(score, 100)
-    
-    # إرجاع القيم (بما فيها قائمة actions)
     if score >= 50: return score, "DANGER / خطر", "crit", reasons, actions, factors, "#ef4444"
     elif score >= 20: return score, "WARNING / تحذير", "warn", reasons, actions, factors, "#eab308"
     return score, "SAFE / آمن", "safe", reasons, actions, factors, "#22c55e"
 
-# تشغيل التحليل
 score, status, css, reasons, actions, factors, clr = analyze(device_type, inputs)
 
 # === القسم الأيسر: الداشبورد ===
@@ -233,7 +224,6 @@ with col_dashboard:
     # 2. منطقة الرسم البياني والتشخيص
     grid_c1, grid_c2 = st.columns([2, 1])
 
-    # === المربع الكبير (الرسوم) ===
     with grid_c1:
         with st.container(border=True): 
             if sum(factors.values()) > 0:
@@ -256,7 +246,6 @@ with col_dashboard:
                 <br><br>
                 """, unsafe_allow_html=True)
 
-    # === المربع الجانبي (الحالة + التوصيات) ===
     with grid_c2:
         with st.container(border=True):
             st.markdown(f"""<div class="status-box {css}" style="font-size:1.4em;">{status}</div>""", unsafe_allow_html=True)
@@ -267,8 +256,6 @@ with col_dashboard:
             else: st.markdown("- لا توجد أعطال")
             
             st.markdown("---")
-            
-            # عرض التوصيات هنا
             st.markdown(f"**🛠️ التوصيات:**")
             if actions:
                 for a in actions: st.markdown(f"- ✅ {a}")
