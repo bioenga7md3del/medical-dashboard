@@ -39,20 +39,15 @@ with st.sidebar:
             st.session_state[k] = v
         st.rerun()
 
-# --- 4. CSS (السحر هنا) ---
-# سنقوم بتغيير ستايل الحاويات الأصلية لتبدو مثل الكروت
+# --- 4. CSS (تصميم الحدود والكروت) ---
 if is_dark:
-    bg_color = "#0e1117"
-    card_bg = "#1e2329" # لون الكارت الغامق
-    text_color = "#fafafa"
-    border_color = "#2d333b"
-    chart_theme = "plotly_dark"
+    bg_color = "#0e1117"; card_bg = "#1e2329"; text_color = "#fafafa"; border_color = "#2d333b"; chart_theme = "plotly_dark"
+    limit_bg = "#0f3443"; limit_text = "#00bcd4"; limit_border = "#005662"
+    input_bg = "#0e1117"
 else:
-    bg_color = "#f8fafc"
-    card_bg = "#ffffff"
-    text_color = "#0f172a"
-    border_color = "#e2e8f0"
-    chart_theme = "plotly_white"
+    bg_color = "#f8fafc"; card_bg = "#ffffff"; text_color = "#0f172a"; border_color = "#e2e8f0"; chart_theme = "plotly_white"
+    limit_bg = "#e0f2fe"; limit_text = "#0284c7"; limit_border = "#bae6fd"
+    input_bg = "#ffffff"
 
 st.markdown(f"""
 <style>
@@ -60,87 +55,92 @@ st.markdown(f"""
 html, body, [class*="css"] {{ font-family: 'Tajawal', sans-serif; direction: rtl; }}
 .stApp {{ background-color: {bg_color}; color: {text_color}; }}
 
-/* تحويل الحاويات (Containers) إلى كروت زجاجية */
+/* تحويل الحاويات لكروت */
 div[data-testid="stVerticalBlockBorderWrapper"] {{
-    background-color: {card_bg};
-    border: 1px solid {border_color};
-    border-radius: 12px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    padding: 20px;
-    margin-bottom: 20px;
+    background-color: {card_bg}; border: 1px solid {border_color}; border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px;
 }}
 
-/* تنسيق النصوص */
+/* تصميم شارة الحدود (الجديد) */
+.limit-badge {{
+    background: {limit_bg}; color: {limit_text};
+    font-size: 0.75rem; padding: 2px 8px; border-radius: 4px;
+    border: 1px solid {limit_border}; float: left; margin-top: 2px;
+}}
+.input-label {{ font-size:0.9em; font-weight:bold; opacity: 0.9; }}
+
+/* تحسين المدخلات */
+.stNumberInput input {{ background-color: {input_bg}; color: {text_color}; }}
 h1, h2, h3, h4 {{ color: {text_color}; font-weight: 700; }}
 .highlight {{ color: #00bcd4; }}
-
-/* صناديق الحالة الملونة */
-.status-box {{ padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 10px; }}
-.crit {{ background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #ef4444; }}
-.warn {{ background: rgba(234, 179, 8, 0.1); border: 1px solid #eab308; color: #eab308; }}
-.safe {{ background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; color: #22c55e; }}
-
 </style>
 """, unsafe_allow_html=True)
 
-# دالة للإدخال
-def smart_input(col, label, key, min_v, max_v, step):
+# --- دالة الإدخال الذكية (مع الحدود) ---
+def smart_input(col, label, key, min_v, max_v, step, limit_text, icon="🔹"):
+    # التأكد من تحميل القيمة
     if key not in st.session_state: st.session_state[key] = default_values[device_type].get(key, min_v)
-    return col.number_input(label, min_value=min_v, max_value=max_v, step=step, key=key)
+    
+    # رسم العنوان والحد (العودة للشكل القديم)
+    col.markdown(f"""
+    <div style="margin-bottom:5px; display:flex; justify-content:space-between;">
+        <span class="input-label">{icon} {label}</span>
+        <span class="limit-badge">{limit_text}</span>
+    </div>""", unsafe_allow_html=True)
+    
+    return col.number_input("hidden", min_value=min_v, max_value=max_v, step=step, key=key, label_visibility="collapsed")
 
 # --- 5. الهيكل الرئيسي ---
 st.markdown(f"""<h2>🏥 مركز القيادة: <span class='highlight'>{device_type}</span></h2>""", unsafe_allow_html=True)
 
 col_inputs, col_dashboard = st.columns([1, 2.5], gap="large")
 
-# === القسم الأيمن: المدخلات (داخل كارت) ===
+# === القسم الأيمن: المدخلات (مع الحدود) ===
 with col_inputs:
-    with st.container(border=True): # هذا سيتحول لكارت تلقائياً بفضل الـ CSS
+    with st.container(border=True):
         st.markdown("#### ⚙️ لوحة التشغيل")
         tab1, tab2 = st.tabs(["المؤشرات الحيوية", "البيئة والتشغيل"])
+        
         inputs = {}
         with tab1:
             st.write("")
             if device_type == "الرنين المغناطيسي (MRI)":
-                inputs['helium'] = smart_input(st, "🎈 مستوى الهيليوم %", "helium", 0.0, 100.0, 0.5)
-                inputs['comp_pressure'] = smart_input(st, "⚙️ ضغط الكمبروسر", "comp_pressure", 0.0, 30.0, 0.5)
-                inputs['chiller_temp'] = smart_input(st, "❄️ حرارة الشيلر", "chiller_temp", 0.0, 50.0, 0.5)
-                inputs['coil_snr'] = smart_input(st, "📡 جودة الإشارة SNR", "coil_snr", 0.0, 100.0, 1.0)
+                inputs['helium'] = smart_input(st, "مستوى الهيليوم", "helium", 0.0, 100.0, 0.5, "خطر < 60%", "🎈")
+                inputs['comp_pressure'] = smart_input(st, "ضغط الكمبروسر", "comp_pressure", 0.0, 30.0, 0.5, "18-22 PSI", "⚙️")
+                inputs['chiller_temp'] = smart_input(st, "حرارة الشيلر", "chiller_temp", 0.0, 50.0, 0.5, "خطر > 20°C", "❄️")
+                inputs['coil_snr'] = smart_input(st, "جودة الإشارة", "coil_snr", 0.0, 100.0, 1.0, "خطر < 80%", "📡")
             elif device_type == "الأشعة المقطعية (CT Scan)":
-                inputs['gantry_temp'] = smart_input(st, "☢️ حرارة الجانتري", "gantry_temp", 10.0, 120.0, 0.5)
-                inputs['voltage'] = smart_input(st, "⚡ الجهد (V)", "voltage", 0.0, 300.0, 1.0)
-                inputs['tube_arcing'] = smart_input(st, "💥 عدد الشرارات", "tube_arcing", 0, 50, 1)
-                inputs['fan_rpm'] = smart_input(st, "🌀 سرعة المراوح", "fan_rpm", 0, 5000, 100)
+                inputs['gantry_temp'] = smart_input(st, "حرارة الجانتري", "gantry_temp", 10.0, 120.0, 0.5, "خطر > 60°C", "☢️")
+                inputs['voltage'] = smart_input(st, "الجهد (V)", "voltage", 0.0, 300.0, 1.0, "220 ± 10%", "⚡")
+                inputs['tube_arcing'] = smart_input(st, "الشرارات", "tube_arcing", 0, 50, 1, "يجب أن يكون 0", "💥")
+                inputs['fan_rpm'] = smart_input(st, "المراوح", "fan_rpm", 0, 5000, 100, "خطر < 2000", "🌀")
             elif device_type == "الفلورسكوبي (Fluoro)":
-                inputs['voltage'] = smart_input(st, "⚡ الجهد (V)", "voltage", 0.0, 300.0, 1.0)
-                inputs['tube_temp'] = smart_input(st, "🔥 حرارة التيوب", "tube_temp", 10.0, 100.0, 0.5)
-                inputs['error_logs'] = smart_input(st, "⚠️ سجل الأخطاء", "error_logs", 0, 50, 1)
+                inputs['voltage'] = smart_input(st, "الجهد (V)", "voltage", 0.0, 300.0, 1.0, "220 ± 10%", "⚡")
+                inputs['tube_temp'] = smart_input(st, "حرارة التيوب", "tube_temp", 10.0, 100.0, 0.5, "خطر > 70°C", "🔥")
+                inputs['error_logs'] = smart_input(st, "سجل الأخطاء", "error_logs", 0, 50, 1, "يجب أن يكون 0", "⚠️")
                 inputs['cont_hours'] = st.session_state.get('cont_hours', 2.0)
                 inputs['room_temp'] = st.session_state.get('room_temp', 22.0)
             elif device_type == "الأشعة السينية (X-Ray)":
-                inputs['tube_temp'] = smart_input(st, "🔥 حرارة التيوب", "tube_temp", 10.0, 120.0, 0.5)
-                inputs['voltage'] = smart_input(st, "⚡ جهد عالي (kV)", "voltage", 0.0, 200.0, 1.0)
-                inputs['exposure_errors'] = smart_input(st, "🚫 فشل التصوير", "exposure_errors", 0, 20, 1)
+                inputs['tube_temp'] = smart_input(st, "حرارة التيوب", "tube_temp", 10.0, 120.0, 0.5, "خطر > 60°C", "🔥")
+                inputs['voltage'] = smart_input(st, "الجهد (kV)", "voltage", 0.0, 200.0, 1.0, "70 ± 10%", "⚡")
+                inputs['exposure_errors'] = smart_input(st, "فشل التصوير", "exposure_errors", 0, 20, 1, "0 خطأ", "🚫")
                 inputs['cont_hours'] = st.session_state.get('cont_hours', 6.0)
                 inputs['room_temp'] = st.session_state.get('room_temp', 22.0)
         with tab2:
             st.write("")
-            inputs['room_temp'] = smart_input(st, "🌡️ حرارة الغرفة", "room_temp", 10.0, 45.0, 0.5)
-            inputs['humidity'] = smart_input(st, "💧 الرطوبة %", "humidity", 0.0, 100.0, 1.0)
-            inputs['cont_hours'] = smart_input(st, "⏱️ ساعات التشغيل", "cont_hours", 0.0, 24.0, 0.5)
-            limit_txt = "200k" if "CT" in device_type else "20k"
-            inputs['tube_age'] = smart_input(st, "⏳ عمر التيوب", "tube_age", 0.0, 500000.0, 1000.0)
+            inputs['room_temp'] = smart_input(st, "حرارة الغرفة", "room_temp", 10.0, 45.0, 0.5, "المثالي < 24°C", "🌡️")
+            inputs['humidity'] = smart_input(st, "الرطوبة %", "humidity", 0.0, 100.0, 1.0, "30-70%", "💧")
+            inputs['cont_hours'] = smart_input(st, "ساعات التشغيل", "cont_hours", 0.0, 24.0, 0.5, "يفضل < 10h", "⏱️")
+            limit_txt = "Max 200k" if "CT" in device_type else "Max 20k"
+            inputs['tube_age'] = smart_input(st, "عمر التيوب", "tube_age", 0.0, 500000.0, 1000.0, limit_txt, "⏳")
 
 # === منطق التحليل ===
 def analyze(dev, data):
     score = 0; factors = {}; reasons = []
-    
-    # Global Checks
     if data.get('room_temp',22) > 24: score+=15; reasons.append("حرارة الغرفة"); factors['Room']=15
     if data.get('humidity',45) > 70: score+=20; reasons.append("رطوبة عالية"); factors['Hum']=20
     if data.get('cont_hours',0) > 10: score+=15; reasons.append("إجهاد تشغيل"); factors['Work']=15
 
-    # Specific Checks
     if dev == "الرنين المغناطيسي (MRI)":
         if data.get('helium', 85)<40: score+=50; reasons.append("خطر Quench"); factors['He']=50
         elif data.get('helium', 85)<60: score+=20; reasons.append("نقص هيليوم"); factors['He']=20
@@ -158,11 +158,11 @@ def analyze(dev, data):
         if data.get('exposure_errors',0)>3: score+=45; reasons.append("فشل تصوير"); factors['Gen']=45
 
     score = min(score, 100)
-    if score >= 50: return score, "DANGER / خطر", "crit", reasons, factors, "#ef4444"
-    elif score >= 20: return score, "WARNING / تحذير", "warn", reasons, factors, "#eab308"
-    return score, "SAFE / آمن", "safe", reasons, factors, "#22c55e"
+    if score >= 50: return score, "DANGER / خطر", "#ef4444", "rgba(239, 68, 68, 0.1)"
+    elif score >= 20: return score, "WARNING / تحذير", "#eab308", "rgba(234, 179, 8, 0.1)"
+    return score, "SAFE / آمن", "#22c55e", "rgba(34, 197, 94, 0.1)"
 
-score, status, css, reasons, factors, clr = analyze(device_type, inputs)
+score, status, clr, bg_clr = analyze(device_type, inputs)
 
 # === القسم الأيسر: الداشبورد (داخل كروت) ===
 with col_dashboard:
@@ -191,27 +191,20 @@ with col_dashboard:
             hud_metric(c4, "الرطوبة", inputs.get('humidity',0), "%")
 
     # 2. منطقة الرسم البياني والتشخيص
-    # هذا هو الجزء الأهم: استخدام الحاويات الأصلية لضمان أن الرسم داخل المربع
-    
     grid_c1, grid_c2 = st.columns([2, 1])
 
-    # === المربع الكبير (يسار): الرسوم البيانية ===
     with grid_c1:
-        with st.container(border=True): # المربع الكبير
+        with st.container(border=True): # المربع الكبير (الرسوم)
             if sum(factors.values()) > 0:
                 st.markdown("#### 📊 تحليل الأسباب الجذرية")
-                
-                # Bar Chart
                 fig_bar = px.bar(x=list(factors.keys()), y=list(factors.values()), color=list(factors.values()), color_continuous_scale='Reds', template=chart_theme)
                 fig_bar.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="الخطر", coloraxis_showscale=False, margin=dict(t=10,b=10,l=10,r=10), height=200)
                 st.plotly_chart(fig_bar, use_container_width=True)
                 
-                # Pie Chart
                 fig_pie = px.pie(names=list(factors.keys()), values=list(factors.values()), hole=0.6, template=chart_theme)
                 fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5), margin=dict(t=0,b=20,l=10,r=10), height=180)
                 st.plotly_chart(fig_pie, use_container_width=True)
             else:
-                # محتوى بديل عند الأمان لملء الفراغ
                 st.markdown("<br><br>", unsafe_allow_html=True)
                 st.markdown(f"""
                 <div style="text-align:center; opacity:0.7;">
@@ -222,20 +215,15 @@ with col_dashboard:
                 <br><br>
                 """, unsafe_allow_html=True)
 
-    # === المربع الجانبي (يمين): الحالة والعداد ===
     with grid_c2:
-        # المربع العلوي: الحالة
         with st.container(border=True):
-            st.markdown(f"""<div class="status-box {css}" style="font-size:1.4em;">{status}</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div style="background:{bg_clr}; border:1px solid {clr}; color:{clr}; padding:10px; border-radius:8px; text-align:center; font-weight:bold; font-size:1.4em; margin-bottom:10px;">{status}</div>""", unsafe_allow_html=True)
             st.markdown(f"**📋 التشخيص:**")
             if reasons:
-                for r in reasons:
-                    st.markdown(f"- {r}")
-            else:
-                st.markdown("- لا توجد أعطال")
+                for r in reasons: st.markdown(f"- {r}")
+            else: st.markdown("- لا توجد أعطال")
             st.markdown("<br>", unsafe_allow_html=True)
             
-        # المربع السفلي: العداد
         with st.container(border=True):
             gauge_text_color = "white" if is_dark else "#0f172a"
             fig_gauge = go.Figure(go.Indicator(mode = "gauge+number", value = score, title = {'text': "مؤشر الخطر", 'font': {'color': gauge_text_color, 'size': 14}}, number = {'font': {'color': gauge_text_color, 'size': 30}}, gauge = {'axis': {'range': [None, 100], 'tickcolor': gauge_text_color}, 'bar': {'color': clr}, 'bgcolor': "rgba(0,0,0,0)", 'borderwidth': 0, 'steps': [{'range': [0, 20], 'color': 'rgba(34, 197, 94, 0.3)'}, {'range': [20, 50], 'color': 'rgba(234, 179, 8, 0.3)'}, {'range': [50, 100], 'color': 'rgba(239, 68, 68, 0.3)'}]}))
