@@ -243,27 +243,62 @@ with col_dashboard:
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 2. التشخيص والعداد
-    c_res1, c_res2 = st.columns([1.5, 1])
+    # 2. التخطيط الشبكي الجديد (المربع الكبير يسار، الحالة والعداد يمين)
+    # هنا التعديل الجوهري لضبط المكان
+    col_left_charts, col_right_status = st.columns([1.8, 1.2])
     
-    with c_res1:
+    # --- العمود الأيسر: الرسوم البيانية (المربع الكبير) ---
+    with col_left_charts:
+        st.markdown('<div class="glass-card" style="height: 420px; display:flex; flex-direction:column;">', unsafe_allow_html=True)
+        
+        if sum(factors.values()) > 0:
+            st.markdown("#### 📊 تحليل الأسباب الجذرية")
+            # رسم الأعمدة
+            fig_bar = px.bar(x=list(factors.keys()), y=list(factors.values()), 
+                             color=list(factors.values()), color_continuous_scale='Reds', template=chart_template)
+            fig_bar.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+                                  xaxis_title="", yaxis_title="درجة الخطر", coloraxis_showscale=False, 
+                                  margin=dict(t=10,b=10,l=10,r=10), height=180)
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+            # رسم الدائرة
+            fig_pie = px.pie(names=list(factors.keys()), values=list(factors.values()), 
+                             hole=0.6, template=chart_template)
+            fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', showlegend=True, 
+                                  legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+                                  margin=dict(t=0,b=20,l=10,r=10), height=160)
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+        else:
+            # رسالة في حالة عدم وجود خطر لملء الفراغ
+            st.markdown(f"""
+            <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; opacity:0.7;">
+                <h1 style="font-size: 4em; margin:0;">🛡️</h1>
+                <h3 style="color:{text_color};">النظام آمن ومستقر</h3>
+                <p style="color:{sub_text};">لا توجد عوامل خطر نشطة لعرض تحليلها</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- العمود الأيمن: الحالة والعداد ---
+    with col_right_status:
+        # كارت الحالة (فوق)
         st.markdown(f"""
-        <div class="glass-card" style="height:250px; display:flex; flex-direction:column; justify-content:center;">
+        <div class="glass-card" style="height: 200px; display:flex; flex-direction:column; justify-content:center;">
             <div class="status-box {css}" style="font-size:1.5em;">{status}</div>
-            <div style="color:{text_color};">
-                <b>📋 التشخيص التحليلي:</b>
-                <ul style="margin-top:5px; color:{sub_text};">
-                    {''.join([f'<li>{r}</li>' for r in (reasons if reasons else ["جميع المؤشرات ضمن النطاق الطبيعي"])])}
+            <div style="color:{text_color}; text-align:center;">
+                <b>📋 التشخيص:</b>
+                <ul style="margin-top:5px; color:{sub_text}; text-align:right; list-style-position: inside;">
+                    {''.join([f'<li>{r}</li>' for r in (reasons if reasons else ["المؤشرات طبيعية"])])}
                 </ul>
             </div>
         </div>
         """, unsafe_allow_html=True)
-
-    with c_res2:
-        st.markdown('<div class="glass-card" style="height:250px;">', unsafe_allow_html=True)
-        # تحديد لون النص داخل العداد ليكون متناسق مع الثيم
-        gauge_text_color = "white" if is_dark else "#0f172a"
         
+        # كارت العداد (تحت)
+        st.markdown('<div class="glass-card" style="height: 200px;">', unsafe_allow_html=True)
+        gauge_text_color = "white" if is_dark else "#0f172a"
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+number", value = score,
             title = {'text': "مؤشر الخطر", 'font': {'color': gauge_text_color}},
@@ -273,21 +308,6 @@ with col_dashboard:
                      'steps': [{'range': [0, 20], 'color': 'rgba(34, 197, 94, 0.3)'}, 
                                {'range': [20, 50], 'color': 'rgba(234, 179, 8, 0.3)'}, 
                                {'range': [50, 100], 'color': 'rgba(239, 68, 68, 0.3)'}]}))
-        fig_gauge.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': gauge_text_color}, height=200, margin=dict(l=10,r=10,t=40,b=10))
+        fig_gauge.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': gauge_text_color}, height=180, margin=dict(l=10,r=10,t=30,b=10))
         st.plotly_chart(fig_gauge, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # 3. الرسوم البيانية
-    if sum(factors.values()) > 0:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown("#### 📊 تحليل الأسباب الجذرية")
-        cp1, cp2 = st.columns(2)
-        with cp1:
-            fig_pie = px.pie(names=list(factors.keys()), values=list(factors.values()), hole=0.6, template=chart_template)
-            fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', showlegend=False, margin=dict(t=0,b=0,l=0,r=0), height=150)
-            st.plotly_chart(fig_pie, use_container_width=True)
-        with cp2:
-            fig_bar = px.bar(x=list(factors.keys()), y=list(factors.values()), color=list(factors.values()), color_continuous_scale='Reds', template=chart_template)
-            fig_bar.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="درجة الخطر", coloraxis_showscale=False, margin=dict(t=0,b=0,l=0,r=0), height=150)
-            st.plotly_chart(fig_bar, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
